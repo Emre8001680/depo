@@ -9,28 +9,6 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Manav Yönetim & Sipariş Portalı", page_icon="🥭", layout="wide")
 
-# 🚫 STREAMLIT TÜM MENÜ, İKON VE SAĞ ALT ROZETLERİ GİZLEME CSS
-st.markdown("""
-    <style>
-        #MainMenu {visibility: hidden !important;}
-        header {visibility: hidden !important;}
-        footer {visibility: hidden !important;}
-        [data-testid="stHeader"] {display: none !important;}
-        [data-testid="stDecoration"] {display: none !important;}
-        [data-testid="stStatusWidget"] {display: none !important;}
-        #GithubIcon {visibility: hidden !important;}
-        
-        /* Sağ alt köşedeki Streamlit logosu ve profil ikonlarını tamamen gizleme */
-        div[class*="viewerBadge"] {display: none !important;}
-        a[class*="viewerBadge"] {display: none !important;}
-        div[class*="styles_viewerBadge"] {display: none !important;}
-        .stAppToolbar {display: none !important;}
-        div[data-testid="stToolbar"] {display: none !important;}
-        button[title="View app in Streamlit Community Cloud"] {display: none !important;}
-        iframe[title="streamlit_badge"] {display: none !important;}
-    </style>
-""", unsafe_allow_html=True)
-
 # 🔒 Merkez Yönetim Paneli Giriş Şifresi
 YONETICI_SIFRESI = "1234"
 
@@ -78,7 +56,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             params=(secilen_sube, bugun_str)
         )
         
-        # Kolay erişim için sözlüğe çevirelim
+        # Kolay erişim için sözlüğe çevirelim: {'KOD': {'stok': X, 'siparis': Y}}
         kayitli_dict = {}
         for _, r in mevcut_kayitlar.iterrows():
             kayitli_dict[r['urun_kodu']] = {
@@ -172,6 +150,7 @@ if rol == "🏬 Şube Sipariş Girişi":
 
         with btn_col1:
             if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
+                # Önce şubenin bugünkü eski sipariş kayıtlarını temizliyoruz
                 c.execute("DELETE FROM siparisler WHERE sube = ? AND tarih = ?", (secilen_sube, bugun_str))
                 
                 if len(kaydedilecek_veriler) > 0:
@@ -216,6 +195,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
             st.session_state.admin_authed = False
             st.rerun()
 
+        # Custom CSS - Tabloyu Dar (Kompakt) Yapma
         st.markdown("""
             <style>
                 div[data-testid="stDataFrame"] table {
@@ -267,6 +247,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
+            # Özet Kartlar
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Toplam Kalem", len(filtreli_df))
             col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
@@ -275,6 +256,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
+            # PIVOT TABLO
             pivot_genel = pd.pivot_table(
                 filtreli_df, 
                 values=['Mevcut Stok', 'Sipariş Miktarı'], 
@@ -284,16 +266,21 @@ elif rol == "👑 Merkez Yönetim Paneli":
                 fill_value=0
             )
 
+            # Şubeleri üst başlık yapma
             pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
             pivot_genel = pivot_genel.sort_index(axis=1, level=0)
+
+            # Sütun isimlerini kısaltarak genişliği minimuma indirme
             pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
 
+            # GENEL TOPLAM SÜTUNLARI
             toplam_stok = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Mevcut Stok'].sum()
             toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
 
             pivot_genel[('GENEL TOPLAM', 'Top. Stok')] = toplam_stok
             pivot_genel[('GENEL TOPLAM', 'Top. Sip.')] = toplam_siparis
 
+            # Sadece en az 1 stok veya siparişi olan ürünleri göster
             mask = (pivot_genel[('GENEL TOPLAM', 'Top. Stok')] > 0) | (pivot_genel[('GENEL TOPLAM', 'Top. Sip.')] > 0)
             pivot_genel = pivot_genel[mask]
 
@@ -301,12 +288,14 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
+            # EXCEL A4 YATAY ÇIKTI OLUŞTURMA (HATA KORUMALI)
             def generate_excel(df_pivot, etiket):
                 output = io.BytesIO()
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = "Siparis_Cizelgesi"
 
+                # A4 Yatay ve Sayfaya Sığdır Ayarları
                 ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
                 ws.page_setup.paperSize = ws.PAPERSIZE_A4
                 ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -319,6 +308,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
                 font_bold = Font(name="Calibri", size=9, bold=True)
                 font_normal = Font(name="Calibri", size=8.5)
 
+                # Başlık
                 c_title = ws.cell(row=1, column=1, value=f"MANAV SİPARİŞ ÇİZELGESİ ({etiket})")
                 c_title.font = Font(size=12, bold=True)
                 
@@ -340,6 +330,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
                     
                     col_idx += 1
 
+                # Şube başlıklarını birleştirme (Merge)
                 for c in range(3, col_idx, 2):
                     if c + 1 < col_idx:
                         ws.merge_cells(start_row=3, start_column=c, end_row=3, end_column=c+1)
@@ -361,6 +352,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
                         c_idx += 1
                     row_idx += 1
 
+                # Kenarlık ve Dolgu Stilini Uygula
                 for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=col_idx-1):
                     for cell in r:
                         cell.border = border
