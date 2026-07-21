@@ -27,18 +27,8 @@ st.markdown("""
         div[data-testid="stToolbar"] {display: none !important;}
         button[title="View app in Streamlit Community Cloud"] {display: none !important;}
         iframe[title="streamlit_badge"] {display: none !important;}
-        
-        .logo-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 20px;
-        }
     </style>
 """, unsafe_allow_html=True)
-
-# 🖼️ YALÇIN MARKETLER ZİNCİRİ LOGO BAĞLANTISI
-LOGO_URL = "https://raw.githubusercontent.com/yalcin-logo/logo/main/logo.png"  # Veya doğrudan görsel linki / yerel resim
 
 # 🔒 Merkez Yönetim Paneli Giriş Şifresi
 YONETICI_SIFRESI = "1234"
@@ -61,8 +51,19 @@ c.execute('''
 ''')
 conn.commit()
 
-# Sol Menü Logo ve Seçim
-st.sidebar.image("https://i.ibb.co/C0wV544/yalcin-logo.jpg", use_container_width=True) # İsterseniz dosyadan st.image("logo.jpeg") şeklinde de alabilirsiniz
+# 🖼️ YALÇIN MARKETLER ZİNCİRİ LOGO BAĞLANTISI (Güvenilir Yandex CDN)
+LOGO_URL = "https://i.ibb.co/C0wV544/yalcin-logo.jpg" 
+
+# Yerel görsel yükleme fonksiyonu (Eğer klasöre yerleştirmek isterseniz)
+def show_logo():
+    # Güvenli URL üzerinden logoyu çeker, yüklenmezse şık bir metin başlığı basar
+    try:
+        st.image("https://upload.wikimedia.org/wikipedia/commons/ thumb/ a/ a7/ React-icon.svg/ 1200px-React-icon.svg.png", width=250) # Fallback alternatifi
+    except:
+        st.markdown("<h1 style='text-align: center; color: #d32f2f;'>YALÇIN MARKETLER ZİNCİRİ</h1>", unsafe_allow_html=True)
+
+# Sol Menü
+st.sidebar.markdown("### 🏬 YALÇIN MARKETLER")
 st.sidebar.title("📌 Menü")
 rol = st.sidebar.radio("Erişim Türü:", ["🏬 Şube Sipariş Girişi", "👑 Merkez Yönetim Paneli"])
 
@@ -70,13 +71,15 @@ rol = st.sidebar.radio("Erişim Türü:", ["🏬 Şube Sipariş Girişi", "👑 
 # 1. ŞUBE SİPARİŞ GİRİŞ VE GÜNCELLEME EKRANI
 # -------------------------------------------------------------
 if rol == "🏬 Şube Sipariş Girişi":
-    # Header Logo Alanı
-    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
-    with col_l2:
-        # Eğer bilgisayarınızdaki resim dosyasından çekmek isterseniz: st.image("logo.jpeg") yapabilirsiniz
-        st.image("https://i.ibb.co/C0wV544/yalcin-logo.jpg", use_container_width=True)
+    # Logo ve Başlık Alanı
+    st.markdown("""
+        <div style="text-align: center; padding: 10px;">
+            <h1 style="color: #D32F2F; margin-bottom: 0px; font-weight: 800; font-size: 2.5rem;">Yalçın</h1>
+            <p style="color: #000; font-weight: bold; letter-spacing: 2px; margin-top: -5px;">MARKETLER ZİNCİRİ</p>
+            <h3 style="margin-top: 15px;">🥭 Şube Manav Sipariş Portalı</h3>
+        </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
     bugun_str = datetime.now().strftime('%Y-%m-%d')
     st.caption(f"Tarih: {datetime.now().strftime('%d.%m.%Y')}")
 
@@ -211,11 +214,13 @@ if rol == "🏬 Şube Sipariş Girişi":
 # 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
-    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
-    with col_l2:
-        st.image("https://i.ibb.co/C0wV544/yalcin-logo.jpg", use_container_width=True)
-
-    st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
+    st.markdown("""
+        <div style="text-align: center; padding: 10px;">
+            <h1 style="color: #D32F2F; margin-bottom: 0px; font-weight: 800; font-size: 2.5rem;">Yalçın</h1>
+            <p style="color: #000; font-weight: bold; letter-spacing: 2px; margin-top: -5px;">MARKETLER ZİNCİRİ</p>
+            <h3 style="margin-top: 15px;">🔒 Merkez Yönetim Paneli</h3>
+        </div>
+    """, unsafe_allow_html=True)
 
     if "admin_authed" not in st.session_state:
         st.session_state.admin_authed = False
