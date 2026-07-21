@@ -9,24 +9,26 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# 🚫 STREAMLIT TÜM MENÜ, İKON, ROZETLER VE ÖZEL ANİMASYON CSS
+# 🚫 STREAMLIT MENÜSÜNÜ GİZLE AMA MOBİL SOL MENÜ BUTONUNU KORU
 st.markdown("""
     <style>
-        /* Standart Streamlit Elemanlarını Gizleme */
+        /* Sağ üstteki 3 nokta ve geliştirici araçlarını gizle */
         #MainMenu {visibility: hidden !important;}
-        header {visibility: hidden !important;}
         footer {visibility: hidden !important;}
-        [data-testid="stHeader"] {display: none !important;}
-        [data-testid="stDecoration"] {display: none !important;}
-        [data-testid="stStatusWidget"] {display: none !important;}
         #GithubIcon {visibility: hidden !important;}
         div[class*="viewerBadge"] {display: none !important;}
         a[class*="viewerBadge"] {display: none !important;}
         div[class*="styles_viewerBadge"] {display: none !important;}
         .stAppToolbar {display: none !important;}
-        div[data-testid="stToolbar"] {display: none !important;}
         button[title="View app in Streamlit Community Cloud"] {display: none !important;}
         iframe[title="streamlit_badge"] {display: none !important;}
+
+        /* Mobilde sol menüyü açan butonu her zaman görünür ve belirgin yap */
+        [data-testid="stSidebarNav"] {display: block !important;}
+        button[data-testid="baseButton-header"] {
+            visibility: visible !important;
+            display: block !important;
+        }
 
         /* LOGO ANİMASYONU */
         @keyframes fadeInZoom {
@@ -78,26 +80,22 @@ if "site_giris_yapildi" not in st.session_state:
 # 🌟 ANİMASYONLU İLK GİRİŞ / KARŞILAMA EKRANI (SPLASH SCREEN)
 # -------------------------------------------------------------
 if not st.session_state.site_giris_yapildi:
-    # Sayfayı dikeyde ortalamak için boşluklar
     st.markdown("<br><br>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        # Animasyonlu HTML Logo Çağrısı
         import base64
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(f'<img src="data:image/png;base64,{encoded_string}" class="animated-logo">', unsafe_allow_html=True)
         except Exception:
-            # Yedek görsel çağrısı
             st.image("logo.png", use_container_width=True)
 
         st.markdown('<div class="welcome-title">YALÇIN MARKETLER ZİNCİRİ</div>', unsafe_allow_html=True)
         st.markdown('<div class="welcome-sub">Manav Sipariş ve Stok Yönetim Portalı</div>', unsafe_allow_html=True)
         
-        # Ekranın ortasındaki giriş butonu
         if st.button("🚀 SİSTEME GİRİŞ YAP", type="primary", use_container_width=True):
             st.session_state.site_giris_yapildi = True
             st.rerun()
