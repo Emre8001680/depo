@@ -51,17 +51,6 @@ c.execute('''
 ''')
 conn.commit()
 
-# 🖼️ YALÇIN MARKETLER ZİNCİRİ LOGO BAĞLANTISI (Güvenilir Yandex CDN)
-LOGO_URL = "https://i.ibb.co/C0wV544/yalcin-logo.jpg" 
-
-# Yerel görsel yükleme fonksiyonu (Eğer klasöre yerleştirmek isterseniz)
-def show_logo():
-    # Güvenli URL üzerinden logoyu çeker, yüklenmezse şık bir metin başlığı basar
-    try:
-        st.image("https://upload.wikimedia.org/wikipedia/commons/ thumb/ a/ a7/ React-icon.svg/ 1200px-React-icon.svg.png", width=250) # Fallback alternatifi
-    except:
-        st.markdown("<h1 style='text-align: center; color: #d32f2f;'>YALÇIN MARKETLER ZİNCİRİ</h1>", unsafe_allow_html=True)
-
 # Sol Menü
 st.sidebar.markdown("### 🏬 YALÇIN MARKETLER")
 st.sidebar.title("📌 Menü")
@@ -71,14 +60,12 @@ rol = st.sidebar.radio("Erişim Türü:", ["🏬 Şube Sipariş Girişi", "👑 
 # 1. ŞUBE SİPARİŞ GİRİŞ VE GÜNCELLEME EKRANI
 # -------------------------------------------------------------
 if rol == "🏬 Şube Sipariş Girişi":
-    # Logo ve Başlık Alanı
-    st.markdown("""
-        <div style="text-align: center; padding: 10px;">
-            <h1 style="color: #D32F2F; margin-bottom: 0px; font-weight: 800; font-size: 2.5rem;">Yalçın</h1>
-            <p style="color: #000; font-weight: bold; letter-spacing: 2px; margin-top: -5px;">MARKETLER ZİNCİRİ</p>
-            <h3 style="margin-top: 15px;">🥭 Şube Manav Sipariş Portalı</h3>
-        </div>
-    """, unsafe_allow_html=True)
+    # 🖼️ ORİJİNAL LOGO YÜKLEME VE ORTALAMA ALANI
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("logo.png.jpeg", use_container_width=True)
+
+    st.markdown("<h3 style='text-align: center; margin-top: -10px;'>🥭 Şube Manav Sipariş Portalı</h3>", unsafe_allow_html=True)
 
     bugun_str = datetime.now().strftime('%Y-%m-%d')
     st.caption(f"Tarih: {datetime.now().strftime('%d.%m.%Y')}")
@@ -214,13 +201,12 @@ if rol == "🏬 Şube Sipariş Girişi":
 # 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
-    st.markdown("""
-        <div style="text-align: center; padding: 10px;">
-            <h1 style="color: #D32F2F; margin-bottom: 0px; font-weight: 800; font-size: 2.5rem;">Yalçın</h1>
-            <p style="color: #000; font-weight: bold; letter-spacing: 2px; margin-top: -5px;">MARKETLER ZİNCİRİ</p>
-            <h3 style="margin-top: 15px;">🔒 Merkez Yönetim Paneli</h3>
-        </div>
-    """, unsafe_allow_html=True)
+    # 🖼️ ORİJİNAL LOGO YÜKLEME VE ORTALAMA ALANI
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("logo.png.jpeg", use_container_width=True)
+
+    st.markdown("<h3 style='text-align: center; margin-top: -10px;'>🔒 Merkez Yönetim Paneli</h3>", unsafe_allow_html=True)
 
     if "admin_authed" not in st.session_state:
         st.session_state.admin_authed = False
