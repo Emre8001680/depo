@@ -174,20 +174,22 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
         st.subheader("📊 Sipariş ve Stok Çizelgesi")
 
-        # 🎯 FİLTRELERİ ANA EKRANA TAŞIDIK (MOBİL UYUMLU)
+        # 🎯 FİLTRELERİ ANA EKRANA TAŞIDIK VE ANLIK TARİHİ VARSAYILAN YAPTIK
         with st.container():
-            f_col1, f_col2, f_col3 = st.columns([1, 1, 2])
+            f_col1, f_col2, f_col3 = st.columns([1.2, 1, 2])
             
             with f_col1:
-                tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=True)
+                # Varsayılan olarak kapalı (False), böylece anlık gün gelir
+                tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=False)
             
             with f_col2:
                 if not tum_gecmis:
-                    secili_tarih = st.date_input("Günü Seçin:", value=date.today())
+                    # Varsayılan olarak anlık tarih (date.today()) gelir
+                    secili_tarih = st.date_input("Tarih Seçin:", value=date.today())
                     secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
                     tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
                 else:
-                    st.info("🗓️ Tüm Zamanlar Seçili")
+                    st.info("🗓️ Tüm Geçmiş Seçili")
                     tarih_etiket = "Tüm_Gecmis"
 
         if tum_gecmis:
@@ -203,10 +205,10 @@ elif rol == "👑 Merkez Yönetim Paneli":
             )
 
         if df_siparisler.empty:
-            st.warning("ℹ️ Seçilen kriterlere uygun veritabanında kayıtlı sipariş/stok bulunmamaktadır.")
+            st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) veritabanında kayıtlı sipariş/stok bulunmamaktadır.")
         else:
             with f_col3:
-                secili_subeler = st.multiselect("Şube Seçiniz:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
+                secili_subeler = st.multiselect("Şube Filtresi:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
             
             filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)]
 
