@@ -9,25 +9,35 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# 🚫 STREAMLIT MENÜSÜNÜ GİZLE AMA MOBİL SOL MENÜ BUTONUNU KORU
+# 🚫 STREAMLIT SAĞ ÜST MENÜSÜNÜ GİZLE & MOBİL MENÜ BUTONUNU BELİRGİNLEŞTİR
 st.markdown("""
     <style>
-        /* Sağ üstteki 3 nokta ve geliştirici araçlarını gizle */
+        /* Sağ üstteki varsayılan 3 nokta ve footer gizleme */
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden !important;}
-        #GithubIcon {visibility: hidden !important;}
-        div[class*="viewerBadge"] {display: none !important;}
-        a[class*="viewerBadge"] {display: none !important;}
-        div[class*="styles_viewerBadge"] {display: none !important;}
         .stAppToolbar {display: none !important;}
-        button[title="View app in Streamlit Community Cloud"] {display: none !important;}
-        iframe[title="streamlit_badge"] {display: none !important;}
-
-        /* Mobilde sol menüyü açan butonu her zaman görünür ve belirgin yap */
-        [data-testid="stSidebarNav"] {display: block !important;}
-        button[data-testid="baseButton-header"] {
+        
+        /* MOBİLDE SOL MENÜ AÇMA BUTONUNU (SIDEBAR TOGGLE) HER ZAMAN VURGULA */
+        button[data-testid="baseButton-headerNoPadding"],
+        button[data-testid="stSidebarToggle"],
+        [data-testid="collapsedControl"] {
+            display: flex !important;
             visibility: visible !important;
-            display: block !important;
+            background-color: #E11D48 !important; /* Yalçın Market Kırmızı Tone */
+            color: white !important;
+            border-radius: 8px !important;
+            padding: 5px 10px !important;
+            margin: 10px !important;
+            z-index: 999999 !important;
+        }
+
+        button[data-testid="baseButton-headerNoPadding"] svg,
+        button[data-testid="stSidebarToggle"] svg,
+        [data-testid="collapsedControl"] svg {
+            fill: white !important;
+            color: white !important;
+            width: 24px !important;
+            height: 24px !important;
         }
 
         /* LOGO ANİMASYONU */
@@ -135,6 +145,14 @@ else:
     if st.sidebar.button("🏠 Ana Ekran / Çıkış Yap"):
         st.session_state.site_giris_yapildi = False
         st.rerun()
+
+    # MOBİL KULLANICILAR İÇİN ÜST BARSINDA YARDIMCI BİLGİ VE MENÜ DEĞİŞTİRİCİ
+    top_col1, top_col2 = st.columns([3, 1])
+    with top_col1:
+        st.caption("👈 *Mobilde sol üstteki kırmızı oktan menüyü açabilirsiniz.*")
+    with top_col2:
+         aktif_rol_kisa = "Şube Girişi" if "Şube" in rol else "Merkez Panel"
+         st.info(f"**Mod:** {aktif_rol_kisa}")
 
     # -------------------------------------------------------------
     # 1. ŞUBE SİPARİŞ GİRİŞ VE GÜNCELLEME EKRANI
