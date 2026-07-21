@@ -7,7 +7,7 @@ import sqlite3
 st.set_page_config(page_title="Manav Yönetim & Sipariş Portalı", page_icon="🥭", layout="wide")
 
 # 🔒 Merkez Yönetim Paneli Giriş Şifresi
-YONETICI_SIFRESI = "1234"  # Şifrenizi buradan belirleyebilirsiniz
+YONETICI_SIFRESI = "1234"
 
 # Veritabanı Bağlantısı
 conn = sqlite3.connect('manav_siparisleri.db', check_same_thread=False)
@@ -133,7 +133,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             st.success("✅ Siparişiniz başarıyla veritabanına kaydedildi! Merkez birimi anında ekranında görebilir.")
 
 # -------------------------------------------------------------
-# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (SİPARİŞ & STOK PIVOT)
+# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (ÖZEL ÇİFT KATMANLI PIVOT)
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
     st.title("🔒 Merkez Yönetim Paneli")
@@ -175,57 +175,44 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
-            # Sekmeli Görünüm (Sipariş + Stok Pivot)
-            tab1, tab2, tab3, tab4 = st.tabs([
-                "📊 Şube Sipariş Pivot", 
-                "🏬 Şube Stok Pivot", 
+            # TAB YAPISI
+            tab1, tab2, tab3 = st.tabs([
+                "📊 Şube Bazlı Bitişik Pivot Tablo", 
                 "📋 Detaylı Liste", 
                 "📦 Konsolide Toplamlar"
             ])
 
-            # TAB 1: SİPARİŞ PIVOT TABLOSU
+            # TAB 1: GÖRSELDEKİ ÇİFT KATMANLI PIVOT TABLO
             with tab1:
-                st.subheader("🛒 Şube Bazlı Sipariş Miktarları")
-                st.caption("Şubelerin talep ettiği siparişlerin ürün bazlı dağılımı ve genel toplamı:")
-                
-                pivot_siparis = pd.pivot_table(
+                st.subheader("🏬 Şubeler Bitişik Stok & Sipariş Tablosu")
+                st.caption("Ürün Kodu | Ürün Adı solda; Şube Isimleri üstte; Stok ve Sipariş altlarında yan yana gösterilmektedir:")
+
+                # Pivot tablo oluşturma (Values kısmına hem Stok hem Sipariş eklenir)
+                pivot_genel = pd.pivot_table(
                     filtreli_df, 
-                    values='Sipariş Miktarı', 
+                    values=['Mevcut Stok', 'Sipariş Miktarı'], 
                     index=['Ürün Kodu', 'Ürün Adı'], 
                     columns=['Şube'], 
                     aggfunc='sum', 
                     fill_value=0
                 )
-                pivot_siparis['TOPLAM SİPARİŞ'] = pivot_siparis.sum(axis=1)
-                pivot_siparis = pivot_siparis[pivot_siparis['TOPLAM SİPARİŞ'] > 0]
-                
-                st.dataframe(pivot_siparis, use_container_width=True)
 
-            # TAB 2: STOK PIVOT TABLOSU (Şubelerin Eldeki Stokları)
+                # Sütun sırasını düzenleme: Şube -> (Stok, Sipariş)
+                pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
+                pivot_genel = pivot_genel.sort_index(axis=1, level=0)
+                
+                # Sütun isimlerini görseldeki mantığa uygun Türkçe yapma
+                pivot_genel.rename(columns={'Mevcut Stok': 'stok', 'Sipariş Miktarı': 'sipariş'}, inplace=True)
+
+                st.dataframe(pivot_genel, use_container_width=True)
+
+            # TAB 2: DETAYLI LİSTE
             with tab2:
-                st.subheader("📦 Şube Bazlı Mevcut Stok Durumu")
-                st.caption("Şubelerin ellerinde kalan anlık ürün stok miktarları ve şubeler arası stok toplamı:")
-                
-                pivot_stok = pd.pivot_table(
-                    filtreli_df, 
-                    values='Mevcut Stok', 
-                    index=['Ürün Kodu', 'Ürün Adı'], 
-                    columns=['Şube'], 
-                    aggfunc='sum', 
-                    fill_value=0
-                )
-                pivot_stok['TOPLAM ELDEKİ STOK'] = pivot_stok.sum(axis=1)
-                pivot_stok = pivot_stok[pivot_stok['TOPLAM ELDEKİ STOK'] > 0]
-                
-                st.dataframe(pivot_stok, use_container_width=True)
-
-            # TAB 3: DETAYLI LİSTE
-            with tab3:
-                st.subheader("Şubelerin Anlık Giriş Detayları (Stok + Sipariş)")
+                st.subheader("Şubelerin Anlık Giriş Detayları")
                 st.dataframe(filtreli_df, use_container_width=True)
 
-            # TAB 4: KONSOLİDE TOPLAMLAR (Stok vs Sipariş Kıyaslama)
-            with tab4:
+            # TAB 3: KONSOLİDE TOPLAMLAR
+            with tab3:
                 st.subheader("Ürün Bazında Toplam Stok ve Sipariş Analizi")
                 toplam_df = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı']).agg({
                     'Mevcut Stok': 'sum',
@@ -236,22 +223,12 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
-            # İndirme Butonları
-            col_a, col_b = st.columns(2)
-            with col_a:
-                csv_siparis = pivot_siparis.to_csv().encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Sipariş Pivot Tablosunu İndir",
-                    data=csv_siparis,
-                    file_name=f"Siparis_Pivot_{datetime.now().strftime('%d_%m_%Y')}.csv",
-                    mime="text/csv",
-                    type="primary"
-                )
-            with col_b:
-                csv_stok = pivot_stok.to_csv().encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Stok Pivot Tablosunu İndir",
-                    data=csv_stok,
-                    file_name=f"Stok_Pivot_{datetime.now().strftime('%d_%m_%Y')}.csv",
-                    mime="text/csv"
-                )
+            # Excel / CSV İndirme
+            csv_data = pivot_genel.to_csv().encode('utf-8-sig')
+            st.download_button(
+                label="📥 Bitişik Pivot Tabloyu Excel/CSV Olarak İndir",
+                data=csv_data,
+                file_name=f"Sube_Stok_Siparis_Pivot_{datetime.now().strftime('%d_%m_%Y')}.csv",
+                mime="text/csv",
+                type="primary"
+            )
