@@ -172,33 +172,45 @@ elif rol == "👑 Merkez Yönetim Paneli":
             </style>
         """, unsafe_allow_html=True)
 
-        st.sidebar.subheader("📅 Tarih Filtresi")
-        tum_gecmis = st.sidebar.checkbox("Tüm Geçmiş Verileri Göster", value=True)
+        st.subheader("📊 Sipariş ve Stok Çizelgesi")
+
+        # 🎯 FİLTRELERİ ANA EKRANA TAŞIDIK (MOBİL UYUMLU)
+        with st.container():
+            f_col1, f_col2, f_col3 = st.columns([1, 1, 2])
+            
+            with f_col1:
+                tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=True)
+            
+            with f_col2:
+                if not tum_gecmis:
+                    secili_tarih = st.date_input("Günü Seçin:", value=date.today())
+                    secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
+                    tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
+                else:
+                    st.info("🗓️ Tüm Zamanlar Seçili")
+                    tarih_etiket = "Tüm_Gecmis"
 
         if tum_gecmis:
             df_siparisler = pd.read_sql_query(
                 "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler ORDER BY id DESC", 
                 conn
             )
-            st.subheader("📋 Genel Sipariş Çizelgesi (Tüm Geçmiş)")
-            tarih_etiket = "Tüm_Gecmis"
         else:
-            secili_tarih = st.sidebar.date_input("İncelenecek Günü Seçin:", value=date.today())
-            secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
             df_siparisler = pd.read_sql_query(
                 "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler WHERE tarih LIKE ? ORDER BY id DESC", 
                 conn, 
                 params=(f"{secili_tarih_str}%",)
             )
-            st.subheader(f"📋 Günlük Çizelge: {secili_tarih.strftime('%d.%m.%Y')}")
-            tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
 
         if df_siparisler.empty:
-            st.info("ℹ️ Seçilen tarih kriterine uygun veritabanında kayıtlı sipariş/stok bulunmamaktadır.")
+            st.warning("ℹ️ Seçilen kriterlere uygun veritabanında kayıtlı sipariş/stok bulunmamaktadır.")
         else:
-            st.sidebar.subheader("🎯 Şube Filtresi")
-            secili_subeler = st.sidebar.multiselect("Şubeleri Seçin:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
+            with f_col3:
+                secili_subeler = st.multiselect("Şube Seçiniz:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
+            
             filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)]
+
+            st.divider()
 
             # Özet Kartlar
             col1, col2, col3, col4 = st.columns(4)
