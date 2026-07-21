@@ -137,7 +137,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             st.success("✅ Siparişiniz başarıyla veritabanına kaydedildi! Merkez birimi anında ekranında görebilir.")
 
 # -------------------------------------------------------------
-# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (GÜNLÜK VE KOMPAKT TABLO)
+# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (TARİH FİLTRELİ & GEÇMİŞ DAHİL)
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
     st.title("🔒 Merkez Yönetim Paneli")
@@ -159,7 +159,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
             st.session_state.admin_authed = False
             st.rerun()
 
-        # Custom CSS - Tabloyu ve sütunları دار (kompakt) yapma
+        # Custom CSS - Tabloyu Dar (Kompakt) Yapma
         st.markdown("""
             <style>
                 div[data-testid="stDataFrame"] table {
@@ -172,20 +172,29 @@ elif rol == "👑 Merkez Yönetim Paneli":
             </style>
         """, unsafe_allow_html=True)
 
-        st.sidebar.subheader("📅 Günlük Çizelge Filtresi")
-        secili_tarih = st.sidebar.date_input("İncelenecek Tarihi Seçin:", value=date.today())
-        secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
+        st.sidebar.subheader("📅 Tarih Filtresi")
+        tum_gecmis = st.sidebar.checkbox("Tüm Geçmiş Verileri Göster", value=True)
 
-        df_siparisler = pd.read_sql_query(
-            "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler WHERE tarih LIKE ? ORDER BY id DESC", 
-            conn, 
-            params=(f"{secili_tarih_str}%",)
-        )
-
-        st.subheader(f"📋 Günlük Çizelge: {secili_tarih.strftime('%d.%m.%Y')}")
+        if tum_gecmis:
+            df_siparisler = pd.read_sql_query(
+                "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler ORDER BY id DESC", 
+                conn
+            )
+            st.subheader("📋 Genel Sipariş Çizelgesi (Tüm Geçmiş)")
+            tarih_etiket = "Tüm_Gecmis"
+        else:
+            secili_tarih = st.sidebar.date_input("İncelenecek Günü Seçin:", value=date.today())
+            secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
+            df_siparisler = pd.read_sql_query(
+                "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler WHERE tarih LIKE ? ORDER BY id DESC", 
+                conn, 
+                params=(f"{secili_tarih_str}%",)
+            )
+            st.subheader(f"📋 Günlük Çizelge: {secili_tarih.strftime('%d.%m.%Y')}")
+            tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
 
         if df_siparisler.empty:
-            st.info(f"ℹ️ {secili_tarih.strftime('%d.%m.%Y')} tarihi için henüz kaydedilmiş sipariş/stok verisi bulunmamaktadır.")
+            st.info("ℹ️ Seçilen tarih kriterine uygun veritabanında kayıtlı sipariş/stok bulunmamaktadır.")
         else:
             st.sidebar.subheader("🎯 Şube Filtresi")
             secili_subeler = st.sidebar.multiselect("Şubeleri Seçin:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
@@ -232,14 +241,12 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
-            # -------------------------------------------------------------
-            # EXCEL A4 YATAY YAZDIRMA UYUMLU İNDİRME DOSYASI OLUŞTURMA
-            # -------------------------------------------------------------
-            def generate_excel(df_pivot, tarih_etiketi):
+            # EXCEL A4 YATAY ÇIKTI OLUŞTURMA
+            def generate_excel(df_pivot, etiket):
                 output = io.BytesIO()
                 wb = openpyxl.Workbook()
                 ws = wb.active
-                ws.title = "Gunluk_Siparis_Cizelgesi"
+                ws.title = "Siparis_Cizelgesi"
 
                 # A4 Yatay ve Sayfaya Sığdır Ayarları
                 ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
@@ -248,18 +255,14 @@ elif rol == "👑 Merkez Yönetim Paneli":
                 ws.page_setup.fitToWidth = 1
                 ws.page_setup.fitToHeight = 0
 
-                # Kenarlık ve Dolgu Stilleri
                 thin = Side(border_style="thin", color="D3D3D3")
                 border = Border(top=thin, left=thin, right=thin, bottom=thin)
                 header_fill = PatternFill(start_color="F0F2F6", end_color="F0F2F6", fill_type="solid")
-                total_fill = PatternFill(start_color="E6F0FA", end_color="E6F0FA", fill_type="solid")
                 font_bold = Font(name="Calibri", size=9, bold=True)
                 font_normal = Font(name="Calibri", size=8.5)
 
-                # Başlık Yazımı
-                ws.cell(row=1, column=1, value=f"MANAV SİPARİŞ ÇİZELGESİ ({tarih_etiketi})").font = Font(size=12, bold=True)
+                ws.cell(row=1, column=1, value=f"MANAV SİPARİŞ ÇİZELGESİ ({etiket})").font = Font(size=12, bold=True)
                 
-                # Seviye 1 Başlıklar (Şube İsimleri)
                 ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
                 ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
                 
@@ -269,12 +272,10 @@ elif rol == "👑 Merkez Yönetim Paneli":
                     ws.cell(row=3, column=col_idx, value=sube).font = font_bold
                     ws.cell(row=4, column=col_idx, value=metrik).font = font_bold
                     
-                    # Şube Hücrelerini Birleştirme
                     if col_idx % 2 == 1 and col_idx < len(df_pivot.columns) + 2:
                         ws.merge_cells(start_row=3, start_column=col_idx, end_row=3, end_column=col_idx+1)
                     col_idx += 1
 
-                # Veri Satırlarını Yazma
                 row_idx = 5
                 for (kodu, adi), row_data in df_pivot.iterrows():
                     ws.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
@@ -288,7 +289,6 @@ elif rol == "👑 Merkez Yönetim Paneli":
                         c_idx += 1
                     row_idx += 1
 
-                # Tüm hücrelere kenarlık ve biçimlendirme
                 for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=len(df_pivot.columns)+2):
                     for cell in r:
                         cell.border = border
@@ -296,7 +296,6 @@ elif rol == "👑 Merkez Yönetim Paneli":
                             cell.fill = header_fill
                             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-                # Sütun Genişliklerini Daraltma (A4'e tam sığması için)
                 ws.column_dimensions['A'].width = 10
                 ws.column_dimensions['B'].width = 24
                 for c in range(3, len(df_pivot.columns) + 3):
@@ -306,12 +305,12 @@ elif rol == "👑 Merkez Yönetim Paneli":
                 wb.save(output)
                 return output.getvalue()
 
-            excel_bytes = generate_excel(pivot_genel, secili_tarih.strftime('%d.%m.%Y'))
+            excel_bytes = generate_excel(pivot_genel, tarih_etiket)
 
             st.download_button(
                 label="🖨️ A4 Yatay Çıktı İçin Excel Dosyasını İndir",
                 data=excel_bytes,
-                file_name=f"Manav_Siparis_Cizelgesi_{secili_tarih.strftime('%d_%m_%Y')}.xlsx",
+                file_name=f"Manav_Siparis_Cizelgesi_{tarih_etiket}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary"
             )
