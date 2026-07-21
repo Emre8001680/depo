@@ -261,35 +261,52 @@ elif rol == "👑 Merkez Yönetim Paneli":
                 font_bold = Font(name="Calibri", size=9, bold=True)
                 font_normal = Font(name="Calibri", size=8.5)
 
-                ws.cell(row=1, column=1, value=f"MANAV SİPARİŞ ÇİZELGESİ ({etiket})").font = Font(size=12, bold=True)
+                # Başlık
+                c_title = ws.cell(row=1, column=1, value=f"MANAV SİPARİŞ ÇİZELGESİ ({etiket})")
+                c_title.font = Font(size=12, bold=True)
                 
-                ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
-                ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
+                c_kodu = ws.cell(row=3, column=1, value="Ürün Kodu")
+                c_kodu.font = font_bold
+                c_adi = ws.cell(row=3, column=2, value="Ürün Adı")
+                c_adi.font = font_bold
                 
                 col_idx = 3
                 for col in df_pivot.columns:
-                    sube, metrik = str(col[0]), str(col[1])
-                    ws.cell(row=3, column=col_idx, value=sube).font = font_bold
-                    ws.cell(row=4, column=col_idx, value=metrik).font = font_bold
+                    sube_adi = str(col[0]) if isinstance(col, tuple) else str(col)
+                    metrik_adi = str(col[1]) if isinstance(col, tuple) and len(col) > 1 else ""
                     
-                    if col_idx % 2 == 1 and col_idx < len(df_pivot.columns) + 2:
-                        ws.merge_cells(start_row=3, start_column=col_idx, end_row=3, end_column=col_idx+1)
+                    cell_sube = ws.cell(row=3, column=col_idx, value=sube_adi)
+                    cell_sube.font = font_bold
+                    
+                    cell_metrik = ws.cell(row=4, column=col_idx, value=metrik_adi)
+                    cell_metrik.font = font_bold
+                    
                     col_idx += 1
+
+                # Şube başlıklarını birleştirme (Merge)
+                for c in range(3, col_idx, 2):
+                    if c + 1 < col_idx:
+                        ws.merge_cells(start_row=3, start_column=c, end_row=3, end_column=c+1)
 
                 row_idx = 5
                 for (kodu, adi), row_data in df_pivot.iterrows():
-                    ws.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
-                    ws.cell(row=row_idx, column=2, value=str(adi)).font = font_normal
+                    c_k = ws.cell(row=row_idx, column=1, value=str(kodu))
+                    c_k.font = font_normal
+                    
+                    c_a = ws.cell(row=row_idx, column=2, value=str(adi))
+                    c_a.font = font_normal
                     
                     c_idx = 3
                     for val in row_data:
-                        cell = ws.cell(row=row_idx, column=c_idx, value=float(val) if val != 0 else "")
-                        cell.font = font_normal
-                        cell.alignment = Alignment(horizontal="center")
+                        val_num = float(val) if val != 0 else ""
+                        cell_val = ws.cell(row=row_idx, column=c_idx, value=val_num)
+                        cell_val.font = font_normal
+                        cell_val.alignment = Alignment(horizontal="center")
                         c_idx += 1
                     row_idx += 1
 
-                for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=len(df_pivot.columns)+2):
+                # Kenarlık ve Dolgu Stilini Uygula
+                for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=col_idx-1):
                     for cell in r:
                         cell.border = border
                         if cell.row in (3, 4):
@@ -298,7 +315,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
                 ws.column_dimensions['A'].width = 10
                 ws.column_dimensions['B'].width = 24
-                for c in range(3, len(df_pivot.columns) + 3):
+                for c in range(3, col_idx):
                     col_letter = openpyxl.utils.get_column_letter(c)
                     ws.column_dimensions[col_letter].width = 6.5
 
