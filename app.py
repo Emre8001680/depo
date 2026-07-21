@@ -133,7 +133,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             st.success("✅ Siparişiniz başarıyla veritabanına kaydedildi! Merkez birimi anında ekranında görebilir.")
 
 # -------------------------------------------------------------
-# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (ÖZEL ÇİFT KATMANLI PIVOT)
+# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (ÇİFT KATMANLI PIVOT & GENEL TOPLAM)
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
     st.title("🔒 Merkez Yönetim Paneli")
@@ -176,18 +176,17 @@ elif rol == "👑 Merkez Yönetim Paneli":
             st.divider()
 
             # TAB YAPISI
-            tab1, tab2, tab3 = st.tabs([
-                "📊 Şube Bazlı Bitişik Pivot Tablo", 
-                "📋 Detaylı Liste", 
-                "📦 Konsolide Toplamlar"
+            tab1, tab2 = st.tabs([
+                "📊 Şube Bazlı Pivot Tablo (Toplamsal)", 
+                "📋 Detaylı Ham Kayıt Listesi"
             ])
 
-            # TAB 1: GÖRSELDEKİ ÇİFT KATMANLI PIVOT TABLO
+            # TAB 1: İSTENEN ÖZEL PIVOT TABLO
             with tab1:
-                st.subheader("🏬 Şubeler Bitişik Stok & Sipariş Tablosu")
-                st.caption("Ürün Kodu | Ürün Adı solda; Şube Isimleri üstte; Stok ve Sipariş altlarında yan yana gösterilmektedir:")
+                st.subheader("🏬 Şube Bazlı Stok & Sipariş Pivot Tablosu")
+                st.caption("Şube başlıklarını daraltıp büyütebilirsiniz. En sağda genel stok ve sipariş toplamları yer alır:")
 
-                # Pivot tablo oluşturma (Values kısmına hem Stok hem Sipariş eklenir)
+                # 1. Pivot Tablo Oluşturma
                 pivot_genel = pd.pivot_table(
                     filtreli_df, 
                     values=['Mevcut Stok', 'Sipariş Miktarı'], 
@@ -197,29 +196,26 @@ elif rol == "👑 Merkez Yönetim Paneli":
                     fill_value=0
                 )
 
-                # Sütun sırasını düzenleme: Şube -> (Stok, Sipariş)
+                # 2. Şube Ismini Üst Seviye (Level 0) Yapma
                 pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
                 pivot_genel = pivot_genel.sort_index(axis=1, level=0)
-                
-                # Sütun isimlerini görseldeki mantığa uygun Türkçe yapma
-                pivot_genel.rename(columns={'Mevcut Stok': 'stok', 'Sipariş Miktarı': 'sipariş'}, inplace=True)
+
+                # Sütun isimlerini Türkçeleştirme
+                pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'stok', 'Sipariş Miktarı': 'sipariş'})
+
+                # 3. EN SAĞA GENEL TOPLAM SÜTUNLARINI EKLEME
+                toplam_stok = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Mevcut Stok'].sum()
+                toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
+
+                pivot_genel[('GENEL TOPLAM', 'toplam stok')] = toplam_stok
+                pivot_genel[('GENEL TOPLAM', 'toplam sipariş')] = toplam_siparis
 
                 st.dataframe(pivot_genel, use_container_width=True)
 
-            # TAB 2: DETAYLI LİSTE
+            # TAB 2: HAM LİSTE
             with tab2:
                 st.subheader("Şubelerin Anlık Giriş Detayları")
                 st.dataframe(filtreli_df, use_container_width=True)
-
-            # TAB 3: KONSOLİDE TOPLAMLAR
-            with tab3:
-                st.subheader("Ürün Bazında Toplam Stok ve Sipariş Analizi")
-                toplam_df = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı']).agg({
-                    'Mevcut Stok': 'sum',
-                    'Sipariş Miktarı': 'sum'
-                }).reset_index()
-                toplam_df = toplam_df[(toplam_df['Mevcut Stok'] > 0) | (toplam_df['Sipariş Miktarı'] > 0)]
-                st.dataframe(toplam_df, use_container_width=True)
 
             st.divider()
 
