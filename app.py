@@ -9,47 +9,24 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# 🚫 STREAMLIT SAĞ ÜST MENÜSÜNÜ GİZLE & MOBİL MENÜ BUTONUNU BELİRGİNLEŞTİR
+# CSS DÜZENLEMELERİ (Toolbar ve Menü Çakışmalarını Önler)
 st.markdown("""
     <style>
-        /* Sağ üstteki varsayılan 3 nokta ve footer gizleme */
+        /* Sağ üst 3 nokta ve footer gizleme */
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden !important;}
-        .stAppToolbar {display: none !important;}
         
-        /* MOBİLDE SOL MENÜ AÇMA BUTONUNU (SIDEBAR TOGGLE) HER ZAMAN VURGULA */
-        button[data-testid="baseButton-headerNoPadding"],
-        button[data-testid="stSidebarToggle"],
-        [data-testid="collapsedControl"] {
-            display: flex !important;
-            visibility: visible !important;
-            background-color: #E11D48 !important; /* Yalçın Market Kırmızı Tone */
+        /* Sidebar Butonunu Mobilde Belirginleştirme */
+        [data-testid="stSidebarToggle"], button[aria-label="Toggle sidebar"] {
+            background-color: #E11D48 !important;
             color: white !important;
             border-radius: 8px !important;
-            padding: 5px 10px !important;
-            margin: 10px !important;
-            z-index: 999999 !important;
-        }
-
-        button[data-testid="baseButton-headerNoPadding"] svg,
-        button[data-testid="stSidebarToggle"] svg,
-        [data-testid="collapsedControl"] svg {
-            fill: white !important;
-            color: white !important;
-            width: 24px !important;
-            height: 24px !important;
         }
 
         /* LOGO ANİMASYONU */
         @keyframes fadeInZoom {
-            0% {
-                opacity: 0;
-                transform: scale(0.85);
-            }
-            100% {
-                opacity: 1;
-                transform: scale(1);
-            }
+            0% { opacity: 0; transform: scale(0.85); }
+            100% { opacity: 1; transform: scale(1); }
         }
 
         .animated-logo {
@@ -63,7 +40,6 @@ st.markdown("""
             padding: 20px 0;
         }
 
-        /* KARŞILAMA METNİ STİLİ */
         .welcome-title {
             text-align: center;
             font-size: 28px;
@@ -82,9 +58,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Session State ile Giriş Durumu Kontrolü
+# Session State Tanımlamaları
 if "site_giris_yapildi" not in st.session_state:
     st.session_state.site_giris_yapildi = False
+
+if "aktif_rol" not in st.session_state:
+    st.session_state.aktif_rol = "🏬 Şube Sipariş Girişi"
 
 # -------------------------------------------------------------
 # 🌟 ANİMASYONLU İLK GİRİŞ / KARŞILAMA EKRANI (SPLASH SCREEN)
@@ -121,7 +100,6 @@ else:
     conn = sqlite3.connect('manav_siparisleri.db', check_same_thread=False)
     c = conn.cursor()
 
-    # Tablo Oluşturma
     c.execute('''
         CREATE TABLE IF NOT EXISTS siparisler (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,24 +113,47 @@ else:
     ''')
     conn.commit()
 
-    # Sol Menü
-    st.sidebar.image("logo.png", use_container_width=True)
+    # --- SIDEBAR (MASAÜSTÜ VE ALTERNATİF GEÇİŞ İÇİN) ---
+    try:
+        st.sidebar.image("logo.png", use_container_width=True)
+    except:
+        pass
     st.sidebar.markdown("### 🏬 YALÇIN MARKETLER")
-    st.sidebar.title("📌 Menü")
-    rol = st.sidebar.radio("Erişim Türü:", ["🏬 Şube Sipariş Girişi", "👑 Merkez Yönetim Paneli"])
+    
+    # Sidebar üzerinden rol değiştirme
+    st.session_state.aktif_rol = st.sidebar.radio(
+        "Erişim Türü:", 
+        ["🏬 Şube Sipariş Girişi", "👑 Merkez Yönetim Paneli"],
+        index=0 if st.session_state.aktif_rol == "🏬 Şube Sipariş Girişi" else 1
+    )
     
     st.sidebar.divider()
-    if st.sidebar.button("🏠 Ana Ekran / Çıkış Yap"):
+    if st.sidebar.button("🏠 Ana Ekran / Çıkış Yap", key="sidebar_exit"):
         st.session_state.site_giris_yapildi = False
         st.rerun()
 
-    # MOBİL KULLANICILAR İÇİN ÜST BARSINDA YARDIMCI BİLGİ VE MENÜ DEĞİŞTİRİCİ
-    top_col1, top_col2 = st.columns([3, 1])
-    with top_col1:
-        st.caption("👈 *Mobilde sol üstteki kırmızı oktan menüyü açabilirsiniz.*")
-    with top_col2:
-         aktif_rol_kisa = "Şube Girişi" if "Şube" in rol else "Merkez Panel"
-         st.info(f"**Mod:** {aktif_rol_kisa}")
+    # --- MOBİL İÇİN ÜST HIZLI GEÇİŞ MENÜSÜ (KESİN ÇÖZÜM) ---
+    st.markdown("### 📌 Sayfa Geçişi")
+    m_col1, m_col2, m_col3 = st.columns([1, 1, 1])
+    
+    with m_col1:
+        if st.button("🏬 Şube Girişi", type="primary" if st.session_state.aktif_rol == "🏬 Şube Sipariş Girişi" else "secondary", use_container_width=True):
+            st.session_state.aktif_rol = "🏬 Şube Sipariş Girişi"
+            st.rerun()
+            
+    with m_col2:
+        if st.button("👑 Merkez Panel", type="primary" if st.session_state.aktif_rol == "👑 Merkez Yönetim Paneli" else "secondary", use_container_width=True):
+            st.session_state.aktif_rol = "👑 Merkez Yönetim Paneli"
+            st.rerun()
+
+    with m_col3:
+        if st.button("🚪 Çıkış", use_container_width=True):
+            st.session_state.site_giris_yapildi = False
+            st.rerun()
+
+    st.divider()
+
+    rol = st.session_state.aktif_rol
 
     # -------------------------------------------------------------
     # 1. ŞUBE SİPARİŞ GİRİŞ VE GÜNCELLEME EKRANI
@@ -291,7 +292,7 @@ else:
                     st.rerun()
 
     # -------------------------------------------------------------
-    # 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ
+    # 2. ŞİFRELİ MERKEZ YÖNETİM PANELİ
     # -------------------------------------------------------------
     elif rol == "👑 Merkez Yönetim Paneli":
         st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
