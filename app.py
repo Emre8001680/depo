@@ -137,7 +137,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             st.success("✅ Siparişiniz başarıyla veritabanına kaydedildi! Merkez birimi anında ekranında görebilir.")
 
 # -------------------------------------------------------------
-# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (TARİH FİLTRELİ & GEÇMİŞ DAHİL)
+# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
     st.title("🔒 Merkez Yönetim Paneli")
@@ -241,7 +241,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
 
             st.divider()
 
-            # EXCEL A4 YATAY ÇIKTI OLUŞTURMA
+            # EXCEL A4 YATAY ÇIKTI OLUŞTURMA (HATA KORUMALI)
             def generate_excel(df_pivot, etiket):
                 output = io.BytesIO()
                 wb = openpyxl.Workbook()
@@ -268,7 +268,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
                 
                 col_idx = 3
                 for col in df_pivot.columns:
-                    sube, metrik = col
+                    sube, metrik = str(col[0]), str(col[1])
                     ws.cell(row=3, column=col_idx, value=sube).font = font_bold
                     ws.cell(row=4, column=col_idx, value=metrik).font = font_bold
                     
@@ -283,7 +283,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
                     
                     c_idx = 3
                     for val in row_data:
-                        cell = ws.cell(row=row_idx, column=c_idx, value=val if val != 0 else "")
+                        cell = ws.cell(row=row_idx, column=c_idx, value=float(val) if val != 0 else "")
                         cell.font = font_normal
                         cell.alignment = Alignment(horizontal="center")
                         c_idx += 1
