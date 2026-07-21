@@ -63,7 +63,7 @@ if rol == "🏬 Şube Sipariş Girişi":
     # 🖼️ ORİJİNAL LOGO YÜKLEME VE ORTALAMA ALANI
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("logo.png.jpeg", use_container_width=True)
+        st.image("logo.png", use_container_width=True)
 
     st.markdown("<h3 style='text-align: center; margin-top: -10px;'>🥭 Şube Manav Sipariş Portalı</h3>", unsafe_allow_html=True)
 
@@ -204,7 +204,7 @@ elif rol == "👑 Merkez Yönetim Paneli":
     # 🖼️ ORİJİNAL LOGO YÜKLEME VE ORTALAMA ALANI
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("logo.png.jpeg", use_container_width=True)
+        st.image("logo.png", use_container_width=True)
 
     st.markdown("<h3 style='text-align: center; margin-top: -10px;'>🔒 Merkez Yönetim Paneli</h3>", unsafe_allow_html=True)
 
