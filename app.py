@@ -1,7 +1,10 @@
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date
 import sqlite3
+import io
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Manav Yönetim & Sipariş Portalı", page_icon="🥭", layout="wide")
@@ -36,6 +39,7 @@ rol = st.sidebar.radio("Erişim Türü:", ["🏬 Şube Sipariş Girişi", "👑 
 # -------------------------------------------------------------
 if rol == "🏬 Şube Sipariş Girişi":
     st.title("🥭 Şube Manav Sipariş Portalı")
+    bugun_str = datetime.now().strftime('%Y-%m-%d')
     st.caption(f"Tarih: {datetime.now().strftime('%d.%m.%Y')}")
 
     subeler = [
@@ -110,7 +114,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             if stok > 0 or siparis > 0:
                 kaydedilecek_veriler.append((
                     secilen_sube, 
-                    datetime.now().strftime('%Y-%m-%d %H:%M'), 
+                    bugun_str, 
                     row['KODU'], 
                     row['ADI'], 
                     stok, 
@@ -133,7 +137,7 @@ if rol == "🏬 Şube Sipariş Girişi":
             st.success("✅ Siparişiniz başarıyla veritabanına kaydedildi! Merkez birimi anında ekranında görebilir.")
 
 # -------------------------------------------------------------
-# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (ÇİFT KATMANLI PIVOT & GENEL TOPLAM)
+# 2. ŞİFRELİ MERKEZ YÖNETİM PANİLİ (GÜNLÜK VE KOMPAKT TABLO)
 # -------------------------------------------------------------
 elif rol == "👑 Merkez Yönetim Paneli":
     st.title("🔒 Merkez Yönetim Paneli")
@@ -155,76 +159,159 @@ elif rol == "👑 Merkez Yönetim Paneli":
             st.session_state.admin_authed = False
             st.rerun()
 
-        st.caption("Şubelerin anlık stok ve sipariş durumlarını aşağıdan inceleyebilirsiniz.")
+        # Custom CSS - Tabloyu ve sütunları دار (kompakt) yapma
+        st.markdown("""
+            <style>
+                div[data-testid="stDataFrame"] table {
+                    font-size: 11px !important;
+                }
+                div[data-testid="stDataFrame"] td, div[data-testid="stDataFrame"] th {
+                    padding: 2px 4px !important;
+                    white-space: nowrap !important;
+                }
+            </style>
+        """, unsafe_allow_html=True)
 
-        df_siparisler = pd.read_sql_query("SELECT sube AS 'Şube', tarih AS 'Tarih/Saat', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler ORDER BY id DESC", conn)
+        st.sidebar.subheader("📅 Günlük Çizelge Filtresi")
+        secili_tarih = st.sidebar.date_input("İncelenecek Tarihi Seçin:", value=date.today())
+        secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
+
+        df_siparisler = pd.read_sql_query(
+            "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler WHERE tarih LIKE ? ORDER BY id DESC", 
+            conn, 
+            params=(f"{secili_tarih_str}%",)
+        )
+
+        st.subheader(f"📋 Günlük Çizelge: {secili_tarih.strftime('%d.%m.%Y')}")
 
         if df_siparisler.empty:
-            st.info("Henüz sistemde kaydedilmiş bir veri bulunmamaktadır.")
+            st.info(f"ℹ️ {secili_tarih.strftime('%d.%m.%Y')} tarihi için henüz kaydedilmiş sipariş/stok verisi bulunmamaktadır.")
         else:
-            st.sidebar.subheader("🎯 Yönetim Filtreleri")
-            secili_subeler = st.sidebar.multiselect("Şubeye Göre Filtrele:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
+            st.sidebar.subheader("🎯 Şube Filtresi")
+            secili_subeler = st.sidebar.multiselect("Şubeleri Seçin:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
             filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)]
 
-            # Üst Özet Kartları
+            # Özet Kartlar
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Toplam Kayıt Kalemi", len(filtreli_df))
-            col2.metric("Aktif Şube Sayısı", filtreli_df['Şube'].nunique())
-            col3.metric("Toplam Mevcut Stok", f"{filtreli_df['Mevcut Stok'].sum():,.1f} Kg/Adet")
-            col4.metric("Toplam Talep Edilen Sipariş", f"{filtreli_df['Sipariş Miktarı'].sum():,.1f} Kg/Adet")
+            col1.metric("Toplam Kalem", len(filtreli_df))
+            col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
+            col3.metric("Toplam Stok", f"{filtreli_df['Mevcut Stok'].sum():,.1f} Kg")
+            col4.metric("Toplam Sipariş", f"{filtreli_df['Sipariş Miktarı'].sum():,.1f} Kg")
 
             st.divider()
 
-            # TAB YAPISI
-            tab1, tab2 = st.tabs([
-                "📊 Şube Bazlı Pivot Tablo (Toplamsal)", 
-                "📋 Detaylı Ham Kayıt Listesi"
-            ])
+            # PIVOT TABLO
+            pivot_genel = pd.pivot_table(
+                filtreli_df, 
+                values=['Mevcut Stok', 'Sipariş Miktarı'], 
+                index=['Ürün Kodu', 'Ürün Adı'], 
+                columns=['Şube'], 
+                aggfunc='sum', 
+                fill_value=0
+            )
 
-            # TAB 1: İSTENEN ÖZEL PIVOT TABLO
-            with tab1:
-                st.subheader("🏬 Şube Bazlı Stok & Sipariş Pivot Tablosu")
-                st.caption("Şube başlıklarını daraltıp büyütebilirsiniz. En sağda genel stok ve sipariş toplamları yer alır:")
+            # Şubeleri üst başlık yapma
+            pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
+            pivot_genel = pivot_genel.sort_index(axis=1, level=0)
 
-                # 1. Pivot Tablo Oluşturma
-                pivot_genel = pd.pivot_table(
-                    filtreli_df, 
-                    values=['Mevcut Stok', 'Sipariş Miktarı'], 
-                    index=['Ürün Kodu', 'Ürün Adı'], 
-                    columns=['Şube'], 
-                    aggfunc='sum', 
-                    fill_value=0
-                )
+            # Sütun isimlerini kısaltarak genişliği minimuma indirme
+            pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
 
-                # 2. Şube Ismini Üst Seviye (Level 0) Yapma
-                pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
-                pivot_genel = pivot_genel.sort_index(axis=1, level=0)
+            # GENEL TOPLAM SÜTUNLARI
+            toplam_stok = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Mevcut Stok'].sum()
+            toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
 
-                # Sütun isimlerini Türkçeleştirme
-                pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'stok', 'Sipariş Miktarı': 'sipariş'})
+            pivot_genel[('GENEL TOPLAM', 'Top. Stok')] = toplam_stok
+            pivot_genel[('GENEL TOPLAM', 'Top. Sip.')] = toplam_siparis
 
-                # 3. EN SAĞA GENEL TOPLAM SÜTUNLARINI EKLEME
-                toplam_stok = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Mevcut Stok'].sum()
-                toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
+            # Sadece en az 1 stok veya siparişi olan ürünleri göster
+            mask = (pivot_genel[('GENEL TOPLAM', 'Top. Stok')] > 0) | (pivot_genel[('GENEL TOPLAM', 'Top. Sip.')] > 0)
+            pivot_genel = pivot_genel[mask]
 
-                pivot_genel[('GENEL TOPLAM', 'toplam stok')] = toplam_stok
-                pivot_genel[('GENEL TOPLAM', 'toplam sipariş')] = toplam_siparis
-
-                st.dataframe(pivot_genel, use_container_width=True)
-
-            # TAB 2: HAM LİSTE
-            with tab2:
-                st.subheader("Şubelerin Anlık Giriş Detayları")
-                st.dataframe(filtreli_df, use_container_width=True)
+            st.dataframe(pivot_genel, use_container_width=True, height=550)
 
             st.divider()
 
-            # Excel / CSV İndirme
-            csv_data = pivot_genel.to_csv().encode('utf-8-sig')
+            # -------------------------------------------------------------
+            # EXCEL A4 YATAY YAZDIRMA UYUMLU İNDİRME DOSYASI OLUŞTURMA
+            # -------------------------------------------------------------
+            def generate_excel(df_pivot, tarih_etiketi):
+                output = io.BytesIO()
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "Gunluk_Siparis_Cizelgesi"
+
+                # A4 Yatay ve Sayfaya Sığdır Ayarları
+                ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+                ws.page_setup.paperSize = ws.PAPERSIZE_A4
+                ws.sheet_properties.pageSetUpPr.fitToPage = True
+                ws.page_setup.fitToWidth = 1
+                ws.page_setup.fitToHeight = 0
+
+                # Kenarlık ve Dolgu Stilleri
+                thin = Side(border_style="thin", color="D3D3D3")
+                border = Border(top=thin, left=thin, right=thin, bottom=thin)
+                header_fill = PatternFill(start_color="F0F2F6", end_color="F0F2F6", fill_type="solid")
+                total_fill = PatternFill(start_color="E6F0FA", end_color="E6F0FA", fill_type="solid")
+                font_bold = Font(name="Calibri", size=9, bold=True)
+                font_normal = Font(name="Calibri", size=8.5)
+
+                # Başlık Yazımı
+                ws.cell(row=1, column=1, value=f"MANAV SİPARİŞ ÇİZELGESİ ({tarih_etiketi})").font = Font(size=12, bold=True)
+                
+                # Seviye 1 Başlıklar (Şube İsimleri)
+                ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
+                ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
+                
+                col_idx = 3
+                for col in df_pivot.columns:
+                    sube, metrik = col
+                    ws.cell(row=3, column=col_idx, value=sube).font = font_bold
+                    ws.cell(row=4, column=col_idx, value=metrik).font = font_bold
+                    
+                    # Şube Hücrelerini Birleştirme
+                    if col_idx % 2 == 1 and col_idx < len(df_pivot.columns) + 2:
+                        ws.merge_cells(start_row=3, start_column=col_idx, end_row=3, end_column=col_idx+1)
+                    col_idx += 1
+
+                # Veri Satırlarını Yazma
+                row_idx = 5
+                for (kodu, adi), row_data in df_pivot.iterrows():
+                    ws.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
+                    ws.cell(row=row_idx, column=2, value=str(adi)).font = font_normal
+                    
+                    c_idx = 3
+                    for val in row_data:
+                        cell = ws.cell(row=row_idx, column=c_idx, value=val if val != 0 else "")
+                        cell.font = font_normal
+                        cell.alignment = Alignment(horizontal="center")
+                        c_idx += 1
+                    row_idx += 1
+
+                # Tüm hücrelere kenarlık ve biçimlendirme
+                for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=len(df_pivot.columns)+2):
+                    for cell in r:
+                        cell.border = border
+                        if cell.row in (3, 4):
+                            cell.fill = header_fill
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                # Sütun Genişliklerini Daraltma (A4'e tam sığması için)
+                ws.column_dimensions['A'].width = 10
+                ws.column_dimensions['B'].width = 24
+                for c in range(3, len(df_pivot.columns) + 3):
+                    col_letter = openpyxl.utils.get_column_letter(c)
+                    ws.column_dimensions[col_letter].width = 6.5
+
+                wb.save(output)
+                return output.getvalue()
+
+            excel_bytes = generate_excel(pivot_genel, secili_tarih.strftime('%d.%m.%Y'))
+
             st.download_button(
-                label="📥 Bitişik Pivot Tabloyu Excel/CSV Olarak İndir",
-                data=csv_data,
-                file_name=f"Sube_Stok_Siparis_Pivot_{datetime.now().strftime('%d_%m_%Y')}.csv",
-                mime="text/csv",
+                label="🖨️ A4 Yatay Çıktı İçin Excel Dosyasını İndir",
+                data=excel_bytes,
+                file_name=f"Manav_Siparis_Cizelgesi_{secili_tarih.strftime('%d_%m_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary"
             )
