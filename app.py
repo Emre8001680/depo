@@ -9,18 +9,20 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# CSS DÜZENLEMELERİ (Toolbar ve Menü Çakışmalarını Önler)
+# CSS DÜZENLEMELERİ (Gereksiz Üst Bar, Fork, GitHub ve Yan Menü Kalıntılarını Gizler)
 st.markdown("""
     <style>
-        /* Sağ üst 3 nokta ve footer gizleme */
+        /* Sağ üst menü, footer ve Streamlit üst bar/Fork alanlarını tamamen gizle */
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden !important;}
+        header {visibility: hidden !important;}
+        [data-testid="stHeader"] {display: none !important;}
+        [data-testid="stSidebar"] {display: none !important;}
         
-        /* Sidebar Butonunu Mobilde Belirginleştirme */
-        [data-testid="stSidebarToggle"], button[aria-label="Toggle sidebar"] {
-            background-color: #E11D48 !important;
-            color: white !important;
-            border-radius: 8px !important;
+        /* Sayfa üst boşluğunu sıfırla */
+        .block-container {
+            padding-top: 1.5rem !important;
+            padding-bottom: 2rem !important;
         }
 
         /* LOGO ANİMASYONU */
@@ -113,26 +115,7 @@ else:
     ''')
     conn.commit()
 
-    # --- SIDEBAR (MASAÜSTÜ VE ALTERNATİF GEÇİŞ İÇİN) ---
-    try:
-        st.sidebar.image("logo.png", use_container_width=True)
-    except:
-        pass
-    st.sidebar.markdown("### 🏬 YALÇIN MARKETLER")
-    
-    # Sidebar üzerinden rol değiştirme
-    st.session_state.aktif_rol = st.sidebar.radio(
-        "Erişim Türü:", 
-        ["🏬 Şube Sipariş Girişi", "👑 Merkez Yönetim Paneli"],
-        index=0 if st.session_state.aktif_rol == "🏬 Şube Sipariş Girişi" else 1
-    )
-    
-    st.sidebar.divider()
-    if st.sidebar.button("🏠 Ana Ekran / Çıkış Yap", key="sidebar_exit"):
-        st.session_state.site_giris_yapildi = False
-        st.rerun()
-
-    # --- MOBİL İÇİN ÜST HIZLI GEÇİŞ MENÜSÜ (KESİN ÇÖZÜM) ---
+    # --- MOBİL VE MASAÜSTÜ İÇİN ÜST HIZLI GEÇİŞ MENÜSÜ ---
     st.markdown("### 📌 Sayfa Geçişi")
     m_col1, m_col2, m_col3 = st.columns([1, 1, 1])
     
