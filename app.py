@@ -9,16 +9,25 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Manav Yönetim & Sipariş Portalı", page_icon="🥭", layout="wide")
 
-# 🚫 SAĞ ÜST MENÜ, GITHUB/FORK BUTONLARI VE ALT ROZETLERİ GİZLEME
+# 🚫 STREAMLIT TÜM MENÜ, İKON VE SAĞ ALT ROZETLERİ GİZLEME CSS
 st.markdown("""
     <style>
-        #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
-        [data-testid="stHeader"] {display: none;}
-        [data-testid="stDecoration"] {display: none;}
-        [data-testid="stStatusWidget"] {display: none;}
-        #GithubIcon {visibility: hidden;}
+        #MainMenu {visibility: hidden !important;}
+        header {visibility: hidden !important;}
+        footer {visibility: hidden !important;}
+        [data-testid="stHeader"] {display: none !important;}
+        [data-testid="stDecoration"] {display: none !important;}
+        [data-testid="stStatusWidget"] {display: none !important;}
+        #GithubIcon {visibility: hidden !important;}
+        
+        /* Sağ alt köşedeki Streamlit logosu ve profil ikonlarını tamamen gizleme */
+        div[class*="viewerBadge"] {display: none !important;}
+        a[class*="viewerBadge"] {display: none !important;}
+        div[class*="styles_viewerBadge"] {display: none !important;}
+        .stAppToolbar {display: none !important;}
+        div[data-testid="stToolbar"] {display: none !important;}
+        button[title="View app in Streamlit Community Cloud"] {display: none !important;}
+        iframe[title="streamlit_badge"] {display: none !important;}
     </style>
 """, unsafe_allow_html=True)
 
