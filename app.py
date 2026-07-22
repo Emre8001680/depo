@@ -57,7 +57,6 @@ st.markdown("""
     </style>
 
     <script>
-        // Tıklanan input kutusundaki metni otomatik seçme fonksiyonu
         document.addEventListener('focusin', function(e) {
             if (e.target.tagName === 'INPUT') {
                 e.target.select();
@@ -234,15 +233,14 @@ else:
                 varsayilan_siparis = kayitli_dict.get(kod, {}).get('siparis', 0.0)
 
                 with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
-                    col1, col2, col3 = st.columns([1.5, 1, 1.5])
+                    col1, col2 = st.columns([1.5, 1])
                     
                     with col1:
-                        # Stok Durumu Seçeneği
                         stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
                         
                         if not stok_dolu:
                             stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_stok_str) if varsayilan_stok_str.replace('.','',1).isdigit() else 0.0, key=f"stok_{kod}")
-                            stok_kayit = str(stok_val)
+                            stok_kayit = str(int(stok_val))
                         else:
                             stok_kayit = "Reyon Dolu"
                             st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
@@ -250,7 +248,7 @@ else:
                     with col2:
                         siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=varsayilan_siparis, key=f"sip_{kod}")
                         
-                    if (stok_kayit != "0.0" and stok_kayit != "0") or siparis > 0:
+                    if (stok_kayit != "0" and stok_kayit != "0.0") or siparis > 0:
                         kaydedilecek_veriler.append((
                             secilen_sube, 
                             bugun_str, 
@@ -343,7 +341,7 @@ else:
                 with f_col3:
                     secili_subeler = st.multiselect("Şube Filtresi:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
                 
-                filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)]
+                filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)].copy()
 
                 st.divider()
 
@@ -354,6 +352,7 @@ else:
 
                 st.divider()
 
+                # Pivot Tablo Oluşturma
                 pivot_genel = pd.pivot_table(
                     filtreli_df, 
                     values=['Mevcut Stok', 'Sipariş Miktarı'], 
@@ -363,4 +362,113 @@ else:
                     fill_value="0"
                 )
 
+                pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
+                pivot_genel = pivot_genel.sort_index(axis=1, level=0)
+                pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
+
+                # --- GENEL TOPLAM HESAPLAMA ---
+                toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
+                
+                def calc_stok_toplam(g):
+                    num_sum = 0
+                    rd_cnt = 0
+                    for val in g['Mevcut Stok']:
+                        val_str = str(val).strip()
+                        if val_str == "Reyon Dolu":
+                            rd_cnt += 1
+                        else:
+                            try:
+                                num_sum += float(val_str)
+                            except:
+                                pass
+                    res = []
+                    if num_sum > 0:
+                        res.append(f"{int(num_sum)} Kasa")
+                    if rd_cnt > 0:
+                        res.append(f"{rd_cnt} RD")
+                    return " + ".join(res) if res else "0"
+
+                toplam_stok_str = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı']).apply(calc_stok_toplam)
+
+                pivot_genel[('GENEL TOPLAM', 'Top. Stok / RD')] = toplam_stok_str
+                pivot_genel[('GENEL TOPLAM', 'Top. Sipariş')] = toplam_siparis
+
                 st.dataframe(pivot_genel, use_container_width=True, height=550)
+
+                st.divider()
+
+                # --- EXCEL İNDİRME BUTONU VE HAZIRLIĞI ---
+                def generate_excel(df_pivot, etiket):
+                    output = io.BytesIO()
+                    wb = openpyxl.Workbook()
+                    ws = wb.active
+                    ws.title = "Siparis_Cizelgesi"
+
+                    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+                    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+                    ws.sheet_properties.pageSetUpPr.fitToPage = True
+                    ws.page_setup.fitToWidth = 1
+                    ws.page_setup.fitToHeight = 0
+
+                    thin = Side(border_style="thin", color="D3D3D3")
+                    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+                    header_fill = PatternFill(start_color="F0F2F6", end_color="F0F2F6", fill_type="solid")
+                    font_bold = Font(name="Calibri", size=9, bold=True)
+                    font_normal = Font(name="Calibri", size=8.5)
+
+                    ws.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ MANAV SİPARİŞ ÇİZELGESİ ({etiket})").font = Font(size=12, bold=True)
+                    
+                    ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
+                    ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
+                    
+                    col_idx = 3
+                    for col in df_pivot.columns:
+                        sube_adi = str(col[0]) if isinstance(col, tuple) else str(col)
+                        metrik_adi = str(col[1]) if isinstance(col, tuple) and len(col) > 1 else ""
+                        
+                        ws.cell(row=3, column=col_idx, value=sube_adi).font = font_bold
+                        ws.cell(row=4, column=col_idx, value=metrik_adi).font = font_bold
+                        col_idx += 1
+
+                    for c in range(3, col_idx, 2):
+                        if c + 1 < col_idx:
+                            ws.merge_cells(start_row=3, start_column=c, end_row=3, end_column=c+1)
+
+                    row_idx = 5
+                    for (kodu, adi), row_data in df_pivot.iterrows():
+                        ws.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
+                        ws.cell(row=row_idx, column=2, value=str(adi)).font = font_normal
+                        
+                        c_idx = 3
+                        for val in row_data:
+                            cell_val = ws.cell(row=row_idx, column=c_idx, value=str(val) if val != 0 else "")
+                            cell_val.font = font_normal
+                            cell_val.alignment = Alignment(horizontal="center")
+                            c_idx += 1
+                        row_idx += 1
+
+                    for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=col_idx-1):
+                        for cell in r:
+                            cell.border = border
+                            if cell.row in (3, 4):
+                                cell.fill = header_fill
+                                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                    ws.column_dimensions['A'].width = 10
+                    ws.column_dimensions['B'].width = 24
+                    for c in range(3, col_idx):
+                        col_letter = openpyxl.utils.get_column_letter(c)
+                        ws.column_dimensions[col_letter].width = 7.5
+
+                    wb.save(output)
+                    return output.getvalue()
+
+                excel_bytes = generate_excel(pivot_genel, tarih_etiket)
+
+                st.download_button(
+                    label="🖨️ A4 Yatay Çıktı İçin Excel Dosyasını İndir",
+                    data=excel_bytes,
+                    file_name=f"Yalcin_Market_Manav_Siparis_{tarih_etiket}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary"
+                )
