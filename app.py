@@ -30,7 +30,7 @@ except Exception as e:
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
 # -------------------------------------------------------------
-# 🎨 YENİLENMİŞ CSS DÜZENLEMELERİ (KART TASARIMI VE KOYU TEMA UYUMU)
+# 🎨 DİNAMİK TEMA UYUMLU CSS DÜZENLEMELERİ
 # -------------------------------------------------------------
 st.markdown("""
     <style>
@@ -53,10 +53,10 @@ st.markdown("""
         /* LOGO KART TASARIMI */
         .logo-card-container {
             animation: fadeInZoom 1s ease-out forwards;
-            background-color: #ffffff !important; /* Logoyu içine alan beyaz kart */
-            border-radius: 20px;                   /* Kavisli modern köşeler */
-            padding: 30px 20px;                    /* İç boşluk */
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4); /* Derinlik veren şık gölge */
+            background-color: #ffffff !important;
+            border-radius: 20px;
+            padding: 30px 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
             max-width: 460px;
             margin: 0 auto 20px auto;
             display: flex;
@@ -70,14 +70,13 @@ st.markdown("""
             display: block;
         }
 
-        /* METİN RENKLERİ (HER İKİ TEMADA OKUNABİLİR) */
+        /* METİN RENKLERİ (HEM KOYU HEM AÇIK TEMADA ÇALIŞIR) */
         .welcome-title {
             text-align: center;
             font-size: 26px;
             font-weight: 800;
             letter-spacing: 1px;
-            color: #FFFFFF !important; /* Koyu temada parlaması için net BEYAZ */
-            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            color: var(--text-color) !important; /* Dinamik sistem rengi */
             margin-top: 15px;
             margin-bottom: 5px;
         }
@@ -85,7 +84,8 @@ st.markdown("""
         .welcome-sub {
             text-align: center;
             font-size: 15px;
-            color: #CBD5E1 !important; /* Açık ve net gri */
+            color: var(--text-color) !important; /* Dinamik sistem rengi */
+            opacity: 0.75;                        /* Yumuşatılmış görünüm */
             margin-bottom: 25px;
         }
     </style>
@@ -111,7 +111,6 @@ if not st.session_state.site_giris_yapildi:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             
-            # ŞIK KART İÇİNE ALINMIŞ LOGO
             st.markdown(f'''
                 <div class="logo-card-container">
                     <img src="data:image/png;base64,{encoded_string}" class="animated-logo">
