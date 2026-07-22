@@ -1,15 +1,31 @@
+import io
+import base64
+from datetime import datetime, date
 import pandas as pd
 import streamlit as st
-from datetime import datetime, date
-import sqlite3
-import io
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from supabase import create_client, Client
+
+# -------------------------------------------------------------
+# 🌐 SUPABASE BAĞLANTI BİLGİLERİ
+# -------------------------------------------------------------
+SUPABASE_URL = "https://ngokzlndzpodmjiffmjv.supabase.co"
+SUPABASE_KEY = "sb_publishable_LJldycoOPfyCh-stDwAFjg_EVpjACxQ"
+
+@st.cache_resource
+def init_supabase() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+try:
+    supabase = init_supabase()
+except Exception as e:
+    st.error("Supabase bağlantısı kurulamadı. Lütfen internet bağlantınızı ve bilgileri kontrol edin.")
 
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# CSS DÜZENLEMELERİ VE OTO-SEÇİM JAVASCRIPT'I
+# CSS DÜZENLEMELERİ
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden !important;}
@@ -83,7 +99,6 @@ if not st.session_state.site_giris_yapildi:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        import base64
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
@@ -104,8 +119,6 @@ if not st.session_state.site_giris_yapildi:
 else:
     YONETICI_SIFRESI = "1234"
 
-    # 🔑 ŞUBE ÖZEL ŞİFRELERİ (PIN KODLARI)
-    # İhtiyacınıza göre buradaki şifreleri değiştirebilirsiniz.
     SUBE_SIFRELERI = {
         "Raufbey": "1001",
         "Metin Tamer": "1002",
@@ -119,22 +132,6 @@ else:
         "Aşiyan": "1010",
         "Zeytinlik": "1011"
     }
-
-    conn = sqlite3.connect('manav_siparisleri.db', check_same_thread=False)
-    c = conn.cursor()
-
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS siparisler (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sube TEXT,
-            tarih TEXT,
-            urun_kodu TEXT,
-            urun_adi TEXT,
-            mevcut_stok TEXT,
-            siparis_miktari REAL
-        )
-    ''')
-    conn.commit()
 
     # --- GEÇİŞ MENÜSÜ ---
     st.markdown("### 📌 Sayfa Geçişi")
@@ -161,7 +158,7 @@ else:
     rol = st.session_state.aktif_rol
 
     # -------------------------------------------------------------
-    # 1. ŞUBE SİPARİŞ GİRİŞİ (ŞİFRE KORUMALI)
+    # 1. ŞUBE SİPARİŞ GİRİŞİ (SUPABASE BULUT DESTEKLİ)
     # -------------------------------------------------------------
     if rol == "🏬 Şube Sipariş Girişi":
         st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
@@ -171,11 +168,6 @@ else:
 
         subeler = ["-- Seçiniz --"] + list(SUBE_SIFRELERI.keys())
         secilen_sube = st.selectbox("📍 **Lütfen Şubenizi Seçin:**", subeler)
-
-        # Şube değiştiğinde şifre doğrulamasını sıfırla
-        if secilen_sube != st.session_state.giris_yapilan_sube and secilen_sube != "-- Seçiniz --":
-            # Farklı bir şube seçildi, doğrulama yenilenecek
-            pass
 
         if secilen_sube != "-- Seçiniz --":
             
@@ -207,21 +199,22 @@ else:
 
                 st.divider()
 
-                mevcut_kayitlar = pd.read_sql_query(
-                    "SELECT urun_kodu, mevcut_stok, siparis_miktari FROM siparisler WHERE sube = ? AND tarih = ?",
-                    conn,
-                    params=(secilen_sube, bugun_str)
-                )
+                # --- SUPABASE'DEN VERİ ÇEKME ---
+                res = supabase.table("siparisler") \
+                    .select("urun_kodu, mevcut_stok, siparis_miktari") \
+                    .eq("sube", secilen_sube) \
+                    .eq("tarih", bugun_str) \
+                    .execute()
                 
                 kayitli_dict = {}
-                for _, r in mevcut_kayitlar.iterrows():
+                for r in res.data:
                     kayitli_dict[r['urun_kodu']] = {
                         'stok': str(r['mevcut_stok']),
                         'siparis': float(r['siparis_miktari'])
                     }
 
                 if len(kayitli_dict) > 0:
-                    st.info(f"ℹ️ **{secilen_sube}** şubesinin bugün girilmiş siparişleri yüklendi. Değişiklik yapıp tekrar kaydedebilirsiniz.")
+                    st.info(f"ℹ️ **{secilen_sube}** şubesinin bugün girilmiş siparişleri buluttan yüklendi.")
 
                 urunler = [
                     {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
@@ -300,14 +293,14 @@ else:
                             siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=varsayilan_siparis, key=f"sip_{kod}")
                             
                         if (stok_kayit != "0" and stok_kayit != "0.0") or siparis > 0:
-                            kaydedilecek_veriler.append((
-                                secilen_sube, 
-                                bugun_str, 
-                                kod, 
-                                row['ADI'], 
-                                stok_kayit, 
-                                siparis
-                            ))
+                            kaydedilecek_veriler.append({
+                                "sube": secilen_sube,
+                                "tarih": bugun_str,
+                                "urun_kodu": kod,
+                                "urun_adi": row['ADI'],
+                                "mevcut_stok": stok_kayit,
+                                "siparis_miktari": siparis
+                            })
 
                 st.divider()
 
@@ -315,25 +308,20 @@ else:
 
                 with btn_col1:
                     if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
-                        c.execute("DELETE FROM siparisler WHERE sube = ? AND tarih = ?", (secilen_sube, bugun_str))
+                        # SUPABASE KAYIT GÜNCELLEME
+                        supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                         
                         if len(kaydedilecek_veriler) > 0:
-                            c.executemany('''
-                                INSERT INTO siparisler (sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            ''', kaydedilecek_veriler)
-                            conn.commit()
-                            st.success(f"✅ **{secilen_sube}** şubesinin siparişi başarıyla güncellendi!")
+                            supabase.table("siparisler").insert(kaydedilecek_veriler).execute()
+                            st.success(f"✅ **{secilen_sube}** şubesinin siparişi buluta başarıyla kaydedildi!")
                         else:
-                            conn.commit()
                             st.warning("⚠️ Tüm değerler 0 yapıldığı için bugünkü siparişiniz temizlendi.")
                         st.rerun()
 
                 with btn_col2:
                     if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True):
-                        c.execute("DELETE FROM siparisler WHERE sube = ? AND tarih = ?", (secilen_sube, bugun_str))
-                        conn.commit()
-                        st.error("🗑️ Bugünkü siparişiniz tamamen silindi!")
+                        supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                        st.error("🗑️ Bugünkü siparişiniz buluttan tamamen silindi!")
                         st.rerun()
 
     # -------------------------------------------------------------
@@ -374,21 +362,26 @@ else:
                 else:
                     tarih_etiket = "Tüm_Gecmis"
 
+            # SUPABASE'DEN VERİ SORGULAMA
             if tum_gecmis:
-                df_siparisler = pd.read_sql_query(
-                    "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler ORDER BY id DESC", 
-                    conn
-                )
+                res = supabase.table("siparisler").select("sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari").order("id", desc=True).execute()
             else:
-                df_siparisler = pd.read_sql_query(
-                    "SELECT sube AS 'Şube', tarih AS 'Tarih', urun_kodu AS 'Ürün Kodu', urun_adi AS 'Ürün Adı', mevcut_stok AS 'Mevcut Stok', siparis_miktari AS 'Sipariş Miktarı' FROM siparisler WHERE tarih LIKE ? ORDER BY id DESC", 
-                    conn, 
-                    params=(f"{secili_tarih_str}%",)
-                )
+                res = supabase.table("siparisler").select("sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari").eq("tarih", secili_tarih_str).order("id", desc=True).execute()
+
+            df_siparisler = pd.DataFrame(res.data)
 
             if df_siparisler.empty:
                 st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) kayıtlı sipariş bulunmamaktadır.")
             else:
+                df_siparisler = df_siparisler.rename(columns={
+                    'sube': 'Şube',
+                    'tarih': 'Tarih',
+                    'urun_kodu': 'Ürün Kodu',
+                    'urun_adi': 'Ürün Adı',
+                    'mevcut_stok': 'Mevcut Stok',
+                    'siparis_miktari': 'Sipariş Miktarı'
+                })
+
                 with f_col3:
                     secili_subeler = st.multiselect("Şube Filtresi:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
                 
@@ -417,7 +410,7 @@ else:
                 pivot_genel = pivot_genel.sort_index(axis=1, level=0)
                 pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
 
-                # --- GENEL TOPLAM HESAPLAMA ---
+                # GENEL TOPLAM HESAPLAMA
                 toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
                 
                 def calc_stok_toplam(g):
@@ -448,7 +441,7 @@ else:
 
                 st.divider()
 
-                # --- EXCEL İNDİRME BUTONU VE HAZIRLIĞI ---
+                # --- EXCEL İNDİRME HAZIRLIĞI ---
                 def generate_excel(df_pivot, etiket):
                     output = io.BytesIO()
                     wb = openpyxl.Workbook()
