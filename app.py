@@ -349,7 +349,7 @@ else:
 
                 st.divider()
 
-                # GÜVENLİ SAYI DÖNÜŞÜMÜ (HATA ÇÖZÜMÜ)
+                # GÜVENLİ SAYI DÖNÜŞÜMÜ
                 filtreli_df['Sipariş Miktarı'] = pd.to_numeric(filtreli_df['Sipariş Miktarı'], errors='coerce').fillna(0)
 
                 col1, col2, col3 = st.columns(3)
@@ -477,3 +477,34 @@ else:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     type="primary"
                 )
+
+            # -------------------------------------------------------------
+            # 🧹 YENİ EKLENEN: VERİTABANI TEMİZLEME MODÜLÜ
+            # -------------------------------------------------------------
+            st.divider()
+            st.subheader("🗑️ Veritabanı Temizlik ve Yönetim Alanı")
+
+            with st.expander("⚠️ Geçmiş Verileri Sil / Veritabanını Temizle"):
+                st.warning("⚠️ **DİKKAT:** Buradan yapacağınız silme işlemleri kalıcıdır ve geri alınamaz!")
+                
+                silme_tipi = st.radio("Silme İşlemi Türünü Seçin:", [
+                    "📅 Belirli Bir Tarihten ÖNCESİNİ Sil (Eski Veri Temizliği)", 
+                    "🔥 TÜM Veritabanını Sıfırla (Tüm Siparişleri Sil)"
+                ])
+                
+                if "Belirli Bir Tarihten ÖNCESİNİ Sil" in silme_tipi:
+                    silinecek_tarih = st.date_input("Bu tarihten önceki TÜM siparişler silinsin:", value=date.today())
+                    sil_str = silinecek_tarih.strftime('%Y-%m-%d')
+                    
+                    if st.button(f"🚨 {silinecek_tarih.strftime('%d.%m.%Y')} Tarihinden Önceki Verileri Sil", type="primary"):
+                        supabase.table("siparisler").delete().lt("tarih", sil_str).execute()
+                        st.success(f"✅ {silinecek_tarih.strftime('%d.%m.%Y')} tarihinden önceki tüm sipariş kayıtları başarıyla silindi!")
+                        st.rerun()
+
+                elif "TÜM Veritabanını Sıfırla" in silme_tipi:
+                    onay = st.checkbox("Evet, sistemdeki TÜM sipariş geçmişini kalıcı olarak silmek istediğimi onaylıyorum.")
+                    if onay:
+                        if st.button("🔥 TÜM SİPARİŞ VERİTABANINI TEMİZLE", type="primary"):
+                            supabase.table("siparisler").delete().neq("id", 0).execute()
+                            st.success("✅ Veritabanındaki tüm siparişler tamamen sıfırlandı!")
+                            st.rerun()
