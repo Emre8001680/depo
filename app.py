@@ -8,13 +8,12 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from supabase import create_client, Client
 
 # -------------------------------------------------------------
-# 🌐 SUPABASE BAĞLANTI BİLGİLERİ (GÜVENLİ SECRETS YAPISI)
+# 🌐 SUPABASE BAĞLANTI BİLGİLERİ
 # -------------------------------------------------------------
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except Exception:
-    # Yerelde test ederken secrets dosyası yoksa yedek değerler
     SUPABASE_URL = "https://ngokzlndzpodmjiffmjv.supabase.co"
     SUPABASE_KEY = "sb_publishable_LJldycoOPfyCh-stDwAFjg_EVpjACxQ"
 
@@ -76,17 +75,9 @@ st.markdown("""
             margin-bottom: 30px;
         }
     </style>
-
-    <script>
-        document.addEventListener('focusin', function(e) {
-            if (e.target.tagName === 'INPUT') {
-                e.target.select();
-            }
-        });
-    </script>
 """, unsafe_allow_html=True)
 
-# Session State Tanımlamaları
+# Session State
 if "site_giris_yapildi" not in st.session_state:
     st.session_state.site_giris_yapildi = False
 
@@ -96,9 +87,7 @@ if "aktif_rol" not in st.session_state:
 if "giris_yapilan_sube" not in st.session_state:
     st.session_state.giris_yapilan_sube = None
 
-# -------------------------------------------------------------
-# 🌟 KARŞILAMA EKRANI
-# -------------------------------------------------------------
+# KARŞILAMA EKRANI
 if not st.session_state.site_giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -109,7 +98,7 @@ if not st.session_state.site_giris_yapildi:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(f'<img src="data:image/png;base64,{encoded_string}" class="animated-logo">', unsafe_allow_html=True)
         except Exception:
-            st.warning("Logo yüklenemedi (logo.png dosyasını kontrol edin).")
+            st.warning("Logo yüklenemedi.")
 
         st.markdown('<div class="welcome-title">YALÇIN MARKETLER ZİNCİRİ</div>', unsafe_allow_html=True)
         st.markdown('<div class="welcome-sub">Manav Sipariş ve Stok Yönetim Portalı</div>', unsafe_allow_html=True)
@@ -118,27 +107,16 @@ if not st.session_state.site_giris_yapildi:
             st.session_state.site_giris_yapildi = True
             st.rerun()
 
-# -------------------------------------------------------------
-# 🏢 ANA UYGULAMA
-# -------------------------------------------------------------
 else:
     YONETICI_SIFRESI = "1234"
 
     SUBE_SIFRELERI = {
-        "Raufbey": "1001",
-        "Metin Tamer": "1002",
-        "Hacı Osmanlı": "1003",
-        "Salı Yolu": "1004",
-        "Kadiri Yolu": "1005",
-        "Nahır Yolu": "1006",
-        "Eyup Sultan": "1007",
-        "Bulvar": "1008",
-        "Düziçi Çarşı": "1009",
-        "Aşiyan": "1010",
-        "Zeytinlik": "1011"
+        "Raufbey": "1001", "Metin Tamer": "1002", "Hacı Osmanlı": "1003",
+        "Salı Yolu": "1004", "Kadiri Yolu": "1005", "Nahır Yolu": "1006",
+        "Eyup Sultan": "1007", "Bulvar": "1008", "Düziçi Çarşı": "1009",
+        "Aşiyan": "1010", "Zeytinlik": "1011"
     }
 
-    # --- GEÇİŞ MENÜSÜ ---
     st.markdown("### 📌 Sayfa Geçişi")
     m_col1, m_col2, m_col3 = st.columns([1, 1, 1])
     
@@ -162,9 +140,7 @@ else:
 
     rol = st.session_state.aktif_rol
 
-    # -------------------------------------------------------------
     # 1. ŞUBE SİPARİŞ GİRİŞİ
-    # -------------------------------------------------------------
     if rol == "🏬 Şube Sipariş Girişi":
         st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
 
@@ -175,51 +151,36 @@ else:
         secilen_sube = st.selectbox("📍 **Lütfen Şubenizi Seçin:**", subeler)
 
         if secilen_sube != "-- Seçiniz --":
-            
-            # 🔒 ŞÜBE ŞİFRE DOĞRULAMA
             if st.session_state.giris_yapilan_sube != secilen_sube:
                 st.info(f"🔒 **{secilen_sube}** şubesinin sipariş ekranına erişmek için lütfen şube şifrenizi giriniz.")
-                
                 s_col1, s_col2 = st.columns([2, 1])
                 with s_col1:
                     girilen_pin = st.text_input(f"🔑 {secilen_sube} Şube Şifresi:", type="password", key=f"pin_input_{secilen_sube}")
                 with s_col2:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("Giriş Yap", type="primary", use_container_width=True):
-                        dogru_pin = SUBE_SIFRELERI.get(secilen_sube)
-                        if girilen_pin == dogru_pin:
+                        if girilen_pin == SUBE_SIFRELERI.get(secilen_sube):
                             st.session_state.giris_yapilan_sube = secilen_sube
                             st.success("✅ Şifre Doğrulandı!")
                             st.rerun()
                         else:
                             st.error("❌ Hatalı Şube Şifresi!")
-            
-            # ✅ ŞİFRE DOĞRULANDI
             else:
                 st.success(f"🔓 **{secilen_sube}** Şubesi Girişi Aktif")
-                
                 if st.button("🔒 Şube Oturumunu Kapat", type="secondary"):
                     st.session_state.giris_yapilan_sube = None
                     st.rerun()
 
                 st.divider()
 
-                # --- SUPABASE'DEN VERİ ÇEKME ---
-                res = supabase.table("siparisler") \
-                    .select("urun_kodu, mevcut_stok, siparis_miktari") \
-                    .eq("sube", secilen_sube) \
-                    .eq("tarih", bugun_str) \
-                    .execute()
+                res = supabase.table("siparisler").select("urun_kodu, mevcut_stok, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                 
                 kayitli_dict = {}
                 for r in res.data:
                     kayitli_dict[r['urun_kodu']] = {
                         'stok': str(r['mevcut_stok']),
-                        'siparis': float(r['siparis_miktari'])
+                        'siparis': float(r['siparis_miktari']) if r['siparis_miktari'] else 0.0
                     }
-
-                if len(kayitli_dict) > 0:
-                    st.info(f"ℹ️ **{secilen_sube}** şubesinin bugün girilmiş siparişleri yüklendi.")
 
                 urunler = [
                     {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
@@ -286,7 +247,6 @@ else:
                         
                         with col1:
                             stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
-                            
                             if not stok_dolu:
                                 stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_stok_str) if varsayilan_stok_str.replace('.','',1).isdigit() else 0.0, key=f"stok_{kod}")
                                 stok_kayit = str(int(stok_val))
@@ -304,7 +264,7 @@ else:
                                 "urun_kodu": kod,
                                 "urun_adi": row['ADI'],
                                 "mevcut_stok": stok_kayit,
-                                "siparis_miktari": siparis
+                                "siparis_miktari": float(siparis)
                             })
 
                 st.divider()
@@ -314,7 +274,6 @@ else:
                 with btn_col1:
                     if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
                         supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
-                        
                         if len(kaydedilecek_veriler) > 0:
                             supabase.table("siparisler").insert(kaydedilecek_veriler).execute()
                             st.success(f"✅ **{secilen_sube}** şubesinin siparişi buluta başarıyla kaydedildi!")
@@ -328,9 +287,7 @@ else:
                         st.error("🗑️ Bugünkü siparişiniz tamamen silindi!")
                         st.rerun()
 
-    # -------------------------------------------------------------
     # 2. MERKEZ YÖNETİM PANELİ
-    # -------------------------------------------------------------
     elif rol == "👑 Merkez Yönetim Paneli":
         st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
 
@@ -392,10 +349,14 @@ else:
 
                 st.divider()
 
+                # GÜVENLİ SAYI DÖNÜŞÜMÜ (HATA ÇÖZÜMÜ)
+                filtreli_df['Sipariş Miktarı'] = pd.to_numeric(filtreli_df['Sipariş Miktarı'], errors='coerce').fillna(0)
+
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Toplam Kalem", len(filtreli_df))
                 col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
-                col3.metric("Toplam Sipariş", f"{filtreli_df['Sipariş Miktarı'].sum():,.0f} Kasa")
+                toplam_sip_miktari = filtreli_df['Sipariş Miktarı'].sum()
+                col3.metric("Toplam Sipariş", f"{toplam_sip_miktari:,.0f} Kasa")
 
                 st.divider()
 
