@@ -29,7 +29,9 @@ except Exception as e:
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# CSS DÜZENLEMELERİ
+# -------------------------------------------------------------
+# 🎨 YENİLENMİŞ CSS DÜZENLEMELERİ (KART TASARIMI VE KOYU TEMA UYUMU)
+# -------------------------------------------------------------
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden !important;}
@@ -39,40 +41,52 @@ st.markdown("""
         [data-testid="stSidebar"] {display: none !important;}
         
         .block-container {
-            padding-top: 1.5rem !important;
+            padding-top: 2rem !important;
             padding-bottom: 2rem !important;
         }
 
         @keyframes fadeInZoom {
-            0% { opacity: 0; transform: scale(0.85); }
+            0% { opacity: 0; transform: scale(0.9); }
             100% { opacity: 1; transform: scale(1); }
         }
 
-        .animated-logo {
-            animation: fadeInZoom 1.2s ease-out forwards;
-            display: block;
-            margin-left: auto;
-            margin-right: auto;
-            max-width: 450px;
-            width: 100%;
-            height: auto;
-            padding: 20px 0;
+        /* LOGO KART TASARIMI */
+        .logo-card-container {
+            animation: fadeInZoom 1s ease-out forwards;
+            background-color: #ffffff !important; /* Logoyu içine alan beyaz kart */
+            border-radius: 20px;                   /* Kavisli modern köşeler */
+            padding: 30px 20px;                    /* İç boşluk */
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4); /* Derinlik veren şık gölge */
+            max-width: 460px;
+            margin: 0 auto 20px auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
+        .animated-logo {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* METİN RENKLERİ (HER İKİ TEMADA OKUNABİLİR) */
         .welcome-title {
             text-align: center;
-            font-size: 28px;
-            font-weight: 700;
-            color: #1E293B;
-            margin-top: 10px;
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #FFFFFF !important; /* Koyu temada parlaması için net BEYAZ */
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            margin-top: 15px;
             margin-bottom: 5px;
         }
         
         .welcome-sub {
             text-align: center;
-            font-size: 16px;
-            color: #64748B;
-            margin-bottom: 30px;
+            font-size: 15px;
+            color: #CBD5E1 !important; /* Açık ve net gri */
+            margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -89,14 +103,20 @@ if "giris_yapilan_sube" not in st.session_state:
 
 # KARŞILAMA EKRANI
 if not st.session_state.site_giris_yapildi:
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
-            st.markdown(f'<img src="data:image/png;base64,{encoded_string}" class="animated-logo">', unsafe_allow_html=True)
+            
+            # ŞIK KART İÇİNE ALINMIŞ LOGO
+            st.markdown(f'''
+                <div class="logo-card-container">
+                    <img src="data:image/png;base64,{encoded_string}" class="animated-logo">
+                </div>
+            ''', unsafe_allow_html=True)
         except Exception:
             st.warning("Logo yüklenemedi.")
 
@@ -349,7 +369,6 @@ else:
 
                 st.divider()
 
-                # GÜVENLİ SAYI DÖNÜŞÜMÜ
                 filtreli_df['Sipariş Miktarı'] = pd.to_numeric(filtreli_df['Sipariş Miktarı'], errors='coerce').fillna(0)
 
                 col1, col2, col3 = st.columns(3)
@@ -478,9 +497,7 @@ else:
                     type="primary"
                 )
 
-            # -------------------------------------------------------------
-            # 🧹 YENİ EKLENEN: VERİTABANI TEMİZLEME MODÜLÜ
-            # -------------------------------------------------------------
+            # VERİTABANINI TEMİZLEME ALANI
             st.divider()
             st.subheader("🗑️ Veritabanı Temizlik ve Yönetim Alanı")
 
