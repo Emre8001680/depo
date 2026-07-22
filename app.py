@@ -9,23 +9,20 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
-# CSS DÜZENLEMELERİ (Gereksiz Üst Bar, Fork, GitHub ve Yan Menü Kalıntılarını Gizler)
+# CSS DÜZENLEMELERİ VE OTO-SEÇİM JAVASCRIPT'I
 st.markdown("""
     <style>
-        /* Sağ üst menü, footer ve Streamlit üst bar/Fork alanlarını tamamen gizle */
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden !important;}
         header {visibility: hidden !important;}
         [data-testid="stHeader"] {display: none !important;}
         [data-testid="stSidebar"] {display: none !important;}
         
-        /* Sayfa üst boşluğunu sıfırla */
         .block-container {
             padding-top: 1.5rem !important;
             padding-bottom: 2rem !important;
         }
 
-        /* LOGO ANİMASYONU */
         @keyframes fadeInZoom {
             0% { opacity: 0; transform: scale(0.85); }
             100% { opacity: 1; transform: scale(1); }
@@ -58,6 +55,15 @@ st.markdown("""
             margin-bottom: 30px;
         }
     </style>
+
+    <script>
+        // Tıklanan input kutusundaki metni otomatik seçme fonksiyonu
+        document.addEventListener('focusin', function(e) {
+            if (e.target.tagName === 'INPUT') {
+                e.target.select();
+            }
+        });
+    </script>
 """, unsafe_allow_html=True)
 
 # Session State Tanımlamaları
@@ -68,11 +74,10 @@ if "aktif_rol" not in st.session_state:
     st.session_state.aktif_rol = "🏬 Şube Sipariş Girişi"
 
 # -------------------------------------------------------------
-# 🌟 ANİMASYONLU İLK GİRİŞ / KARŞILAMA EKRANI (SPLASH SCREEN)
+# 🌟 KARŞILAMA EKRANI
 # -------------------------------------------------------------
 if not st.session_state.site_giris_yapildi:
     st.markdown("<br><br>", unsafe_allow_html=True)
-    
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
@@ -92,13 +97,11 @@ if not st.session_state.site_giris_yapildi:
             st.rerun()
 
 # -------------------------------------------------------------
-# 🏢 ANA UYGULAMA (GİRİŞ YAPILDIKTAN SONRA AÇILAN EKRAN)
+# 🏢 ANA UYGULAMA
 # -------------------------------------------------------------
 else:
-    # 🔒 Yönetici Giriş Şifresi
     YONETICI_SIFRESI = "1234"
 
-    # Veritabanı Bağlantısı
     conn = sqlite3.connect('manav_siparisleri.db', check_same_thread=False)
     c = conn.cursor()
 
@@ -109,13 +112,13 @@ else:
             tarih TEXT,
             urun_kodu TEXT,
             urun_adi TEXT,
-            mevcut_stok REAL,
+            mevcut_stok TEXT,
             siparis_miktari REAL
         )
     ''')
     conn.commit()
 
-    # --- MOBİL VE MASAÜSTÜ İÇİN ÜST HIZLI GEÇİŞ MENÜSÜ ---
+    # --- GEÇİŞ MENÜSÜ ---
     st.markdown("### 📌 Sayfa Geçişi")
     m_col1, m_col2, m_col3 = st.columns([1, 1, 1])
     
@@ -139,7 +142,7 @@ else:
     rol = st.session_state.aktif_rol
 
     # -------------------------------------------------------------
-    # 1. ŞUBE SİPARİŞ GİRİŞ VE GÜNCELLEME EKRANI
+    # 1. ŞUBE SİPARİŞ GİRİŞİ
     # -------------------------------------------------------------
     if rol == "🏬 Şube Sipariş Girişi":
         st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
@@ -163,7 +166,7 @@ else:
             kayitli_dict = {}
             for _, r in mevcut_kayitlar.iterrows():
                 kayitli_dict[r['urun_kodu']] = {
-                    'stok': float(r['mevcut_stok']),
+                    'stok': str(r['mevcut_stok']),
                     'siparis': float(r['siparis_miktari'])
                 }
 
@@ -223,27 +226,37 @@ else:
             filtre_df = df[df['ADI'].str.contains(arama, case=False) | df['KODU'].str.contains(arama, case=False)] if arama else df
 
             kaydedilecek_veriler = []
-            st.subheader("🛒 Stok ve Sipariş Girişi")
+            st.subheader("📦 Stok ve Sipariş Girişi (Kasa)")
 
             for index, row in filtre_df.iterrows():
                 kod = row['KODU']
-                varsayilan_stok = kayitli_dict.get(kod, {}).get('stok', 0.0)
+                varsayilan_stok_str = kayitli_dict.get(kod, {}).get('stok', "0")
                 varsayilan_siparis = kayitli_dict.get(kod, {}).get('siparis', 0.0)
 
                 with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns([1.5, 1, 1.5])
+                    
                     with col1:
-                        stok = st.number_input("Mevcut Stok", min_value=0.0, step=0.5, value=varsayilan_stok, key=f"stok_{kod}")
-                    with col2:
-                        siparis = st.number_input("Sipariş Miktarı", min_value=0.0, step=0.5, value=varsayilan_siparis, key=f"sip_{kod}")
+                        # Stok Durumu Seçeneği
+                        stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
                         
-                    if stok > 0 or siparis > 0:
+                        if not stok_dolu:
+                            stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_stok_str) if varsayilan_stok_str.replace('.','',1).isdigit() else 0.0, key=f"stok_{kod}")
+                            stok_kayit = str(stok_val)
+                        else:
+                            stok_kayit = "Reyon Dolu"
+                            st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
+
+                    with col2:
+                        siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=varsayilan_siparis, key=f"sip_{kod}")
+                        
+                    if (stok_kayit != "0.0" and stok_kayit != "0") or siparis > 0:
                         kaydedilecek_veriler.append((
                             secilen_sube, 
                             bugun_str, 
                             kod, 
                             row['ADI'], 
-                            stok, 
+                            stok_kayit, 
                             siparis
                         ))
 
@@ -275,7 +288,7 @@ else:
                     st.rerun()
 
     # -------------------------------------------------------------
-    # 2. ŞİFRELİ MERKEZ YÖNETİM PANELİ
+    # 2. MERKEZ YÖNETİM PANELİ
     # -------------------------------------------------------------
     elif rol == "👑 Merkez Yönetim Paneli":
         st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
@@ -290,41 +303,27 @@ else:
                     st.session_state.admin_authed = True
                     st.rerun()
                 else:
-                    st.error("❌ Hatalı şifre! Lütfen tekrar deneyin.")
+                    st.error("❌ Hatalı şifre!")
         else:
             st.success("🔓 Yetkili Girişi Başarılı")
             if st.button("🚪 Oturumu Kapat"):
                 st.session_state.admin_authed = False
                 st.rerun()
 
-            st.markdown("""
-                <style>
-                    div[data-testid="stDataFrame"] table {
-                        font-size: 11px !important;
-                    }
-                    div[data-testid="stDataFrame"] td, div[data-testid="stDataFrame"] th {
-                        padding: 2px 4px !important;
-                        white-space: nowrap !important;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
+            st.subheader("📊 Sipariş ve Stok Çizelgesi (Kasa)")
 
-            st.subheader("📊 Sipariş ve Stok Çizelgesi")
-
-            with st.container():
-                f_col1, f_col2, f_col3 = st.columns([1.2, 1, 2])
-                
-                with f_col1:
-                    tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=False)
-                
-                with f_col2:
-                    if not tum_gecmis:
-                        secili_tarih = st.date_input("Tarih Seçin:", value=date.today())
-                        secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
-                        tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
-                    else:
-                        st.info("🗓️ Tüm Geçmiş Seçili")
-                        tarih_etiket = "Tüm_Gecmis"
+            f_col1, f_col2, f_col3 = st.columns([1.2, 1, 2])
+            
+            with f_col1:
+                tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=False)
+            
+            with f_col2:
+                if not tum_gecmis:
+                    secili_tarih = st.date_input("Tarih Seçin:", value=date.today())
+                    secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
+                    tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
+                else:
+                    tarih_etiket = "Tüm_Gecmis"
 
             if tum_gecmis:
                 df_siparisler = pd.read_sql_query(
@@ -339,7 +338,7 @@ else:
                 )
 
             if df_siparisler.empty:
-                st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) veritabanında kayıtlı sipariş/stok bulunmamaktadır.")
+                st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) kayıtlı sipariş bulunmamaktadır.")
             else:
                 with f_col3:
                     secili_subeler = st.multiselect("Şube Filtresi:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
@@ -348,11 +347,10 @@ else:
 
                 st.divider()
 
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3 = st.columns(3)
                 col1.metric("Toplam Kalem", len(filtreli_df))
                 col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
-                col3.metric("Toplam Stok", f"{filtreli_df['Mevcut Stok'].sum():,.1f} Kg")
-                col4.metric("Toplam Sipariş", f"{filtreli_df['Sipariş Miktarı'].sum():,.1f} Kg")
+                col3.metric("Toplam Sipariş", f"{filtreli_df['Sipariş Miktarı'].sum():,.0f} Kasa")
 
                 st.divider()
 
@@ -361,109 +359,8 @@ else:
                     values=['Mevcut Stok', 'Sipariş Miktarı'], 
                     index=['Ürün Kodu', 'Ürün Adı'], 
                     columns=['Şube'], 
-                    aggfunc='sum', 
-                    fill_value=0
+                    aggfunc='first', 
+                    fill_value="0"
                 )
-
-                pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
-                pivot_genel = pivot_genel.sort_index(axis=1, level=0)
-                pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
-
-                toplam_stok = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Mevcut Stok'].sum()
-                toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
-
-                pivot_genel[('GENEL TOPLAM', 'Top. Stok')] = toplam_stok
-                pivot_genel[('GENEL TOPLAM', 'Top. Sip.')] = toplam_siparis
-
-                mask = (pivot_genel[('GENEL TOPLAM', 'Top. Stok')] > 0) | (pivot_genel[('GENEL TOPLAM', 'Top. Sip.')] > 0)
-                pivot_genel = pivot_genel[mask]
 
                 st.dataframe(pivot_genel, use_container_width=True, height=550)
-
-                st.divider()
-
-                def generate_excel(df_pivot, etiket):
-                    output = io.BytesIO()
-                    wb = openpyxl.Workbook()
-                    ws = wb.active
-                    ws.title = "Siparis_Cizelgesi"
-
-                    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-                    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-                    ws.sheet_properties.pageSetUpPr.fitToPage = True
-                    ws.page_setup.fitToWidth = 1
-                    ws.page_setup.fitToHeight = 0
-
-                    thin = Side(border_style="thin", color="D3D3D3")
-                    border = Border(top=thin, left=thin, right=thin, bottom=thin)
-                    header_fill = PatternFill(start_color="F0F2F6", end_color="F0F2F6", fill_type="solid")
-                    font_bold = Font(name="Calibri", size=9, bold=True)
-                    font_normal = Font(name="Calibri", size=8.5)
-
-                    c_title = ws.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ MANAV SİPARİŞ ÇİZELGESİ ({etiket})")
-                    c_title.font = Font(size=12, bold=True)
-                    
-                    c_kodu = ws.cell(row=3, column=1, value="Ürün Kodu")
-                    c_kodu.font = font_bold
-                    c_adi = ws.cell(row=3, column=2, value="Ürün Adı")
-                    c_adi.font = font_bold
-                    
-                    col_idx = 3
-                    for col in df_pivot.columns:
-                        sube_adi = str(col[0]) if isinstance(col, tuple) else str(col)
-                        metrik_adi = str(col[1]) if isinstance(col, tuple) and len(col) > 1 else ""
-                        
-                        cell_sube = ws.cell(row=3, column=col_idx, value=sube_adi)
-                        cell_sube.font = font_bold
-                        
-                        cell_metrik = ws.cell(row=4, column=col_idx, value=metrik_adi)
-                        cell_metrik.font = font_bold
-                        
-                        col_idx += 1
-
-                    for c in range(3, col_idx, 2):
-                        if c + 1 < col_idx:
-                            ws.merge_cells(start_row=3, start_column=c, end_row=3, end_column=c+1)
-
-                    row_idx = 5
-                    for (kodu, adi), row_data in df_pivot.iterrows():
-                        c_k = ws.cell(row=row_idx, column=1, value=str(kodu))
-                        c_k.font = font_normal
-                        
-                        c_a = ws.cell(row=row_idx, column=2, value=str(adi))
-                        c_a.font = font_normal
-                        
-                        c_idx = 3
-                        for val in row_data:
-                            val_num = float(val) if val != 0 else ""
-                            cell_val = ws.cell(row=row_idx, column=c_idx, value=val_num)
-                            cell_val.font = font_normal
-                            cell_val.alignment = Alignment(horizontal="center")
-                            c_idx += 1
-                        row_idx += 1
-
-                    for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=col_idx-1):
-                        for cell in r:
-                            cell.border = border
-                            if cell.row in (3, 4):
-                                cell.fill = header_fill
-                                cell.alignment = Alignment(horizontal="center", vertical="center")
-
-                    ws.column_dimensions['A'].width = 10
-                    ws.column_dimensions['B'].width = 24
-                    for c in range(3, col_idx):
-                        col_letter = openpyxl.utils.get_column_letter(c)
-                        ws.column_dimensions[col_letter].width = 6.5
-
-                    wb.save(output)
-                    return output.getvalue()
-
-                excel_bytes = generate_excel(pivot_genel, tarih_etiket)
-
-                st.download_button(
-                    label="🖨️ A4 Yatay Çıktı İçin Excel Dosyasını İndir",
-                    data=excel_bytes,
-                    file_name=f"Yalcin_Market_Manav_Siparis_{tarih_etiket}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
