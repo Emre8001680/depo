@@ -231,7 +231,7 @@ def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan):
 
 
 # 🚚 TOPLU HAL DAĞITIM EXCEL ÇIKTISI (OTOMATİK A4 YATAY & SIGDIRMA ENTEGRELİ)
-def generate_toplu_hal_excel(bugun_str):
+def generate_toplu_hal_excel(tarih_sorgu_str):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     
@@ -243,10 +243,10 @@ def generate_toplu_hal_excel(bugun_str):
     ws1.page_setup.orientation = ws1.ORIENTATION_LANDSCAPE  # Yatay Sayfa
     ws1.page_setup.paperSize = ws1.PAPERSIZE_A4             # A4 Boyutu
     ws1.sheet_properties.pageSetUpPr.fitToPage = True       # Sığdırmayı Etkinleştir
-    ws1.page_setup.fitToWidth = 1                          # Tam 1 Sayfa Genişliğine Sığdır
-    ws1.page_setup.fitToHeight = 0                         # Yükseklik Serbest (Sayfalarca Sürebilir)
+    ws1.page_setup.fitToWidth = 1                           # Tam 1 Sayfa Genişliğine Sığdır
+    ws1.page_setup.fitToHeight = 0                          # Yükseklik Serbest
     
-    res = supabase.table("siparisler").select("sube, urun_kodu, urun_adi, siparis_miktari").eq("tarih", bugun_str).execute()
+    res = supabase.table("siparisler").select("sube, urun_kodu, urun_adi, siparis_miktari").eq("tarih", tarih_sorgu_str).execute()
     
     if not res.data:
         return None
@@ -265,7 +265,7 @@ def generate_toplu_hal_excel(bugun_str):
     font_title = Font(name="Calibri", size=13, bold=True)
     font_normal = Font(name="Calibri", size=9)
 
-    ws1.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DAĞITIM MATRİSİ ({datetime.now().strftime('%d.%m.%Y')})").font = font_title
+    ws1.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DAĞITIM MATRİSİ ({tarih_sorgu_str})").font = font_title
 
     # Pivot Tablo (Satır: Ürünler, Sütun: Şubeler)
     pivot_hal = pd.pivot_table(
@@ -329,7 +329,7 @@ def generate_toplu_hal_excel(bugun_str):
     ws2.page_setup.fitToWidth = 1
     ws2.page_setup.fitToHeight = 0
 
-    ws2.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DETAY LİSTESİ ({datetime.now().strftime('%d.%m.%Y')})").font = font_title
+    ws2.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DETAY LİSTESİ ({tarih_sorgu_str})").font = font_title
 
     headers2 = ["Ürün Kodu", "Ürün Adı", "Şube Adı", "Verilecek Miktar (Kasa)"]
     for c_i, h in enumerate(headers2, 1):
@@ -548,7 +548,6 @@ else:
     # 2. HAL DAĞITIM PANELİ
     elif rol == "🚛 Hal Dağıtım Paneli":
         st.markdown("<h2 style='text-align: center;'>🚛 Hal Satınalma ve Dağıtım Paneli</h2>", unsafe_allow_html=True)
-        bugun_str = datetime.now().strftime('%Y-%m-%d')
 
         if not st.session_state.hal_authed:
             hal_pin = st.text_input("🔑 Lütfen Satınalma/Hal Yetkili Şifresini Giriniz:", type="password")
@@ -566,21 +565,43 @@ else:
 
             st.divider()
 
-            # SEVKİYATÇILAR İÇİN TOPLU EXCEL ALANI
-            st.info("📦 **Sevkiyatçılar İçin Toplu Dağıtım Çıktısı:** Bugün halden girilen tüm ürünlerin ve şube dağıtımlarının olduğu tek Excel dosyasını (A4 Yatay Baskıya Hazır) indirebilirsiniz.")
+            # =========================================================================
+            # 📅 YENİ TARİH SEÇİM KUTUSU (GÖRSELDEKİ ALANA EKLENDİ)
+            # =========================================================================
+            st.markdown("#### 📅 Sevkiyat ve Dağıtım Tarihi Seçimi")
             
-            toplu_excel_bytes = generate_toplu_hal_excel(bugun_str)
+            t_col1, t_col2 = st.columns([2, 5])
+            with t_col1:
+                secilen_hal_tarihi = st.date_input("İşlem Yapmak İstediğiniz Tarih:", value=date.today())
+                hal_tarih_str = secilen_hal_tarihi.strftime('%Y-%m-%d')
+            
+            with t_col2:
+                st.write("") 
+                if secilen_hal_tarihi == date.today():
+                    st.info("🟢 **Bugünün** verileri ve dağıtım listesi görüntüleniyor.")
+                else:
+                    st.warning(f"🟡 **{secilen_hal_tarihi.strftime('%d.%m.%Y')}** tarihine ait dağıtım verileri görüntüleniyor.")
+
+            st.divider()
+
+            # SEVKİYATÇILAR İÇİN TOPLU EXCEL ALANI
+            is_today = (secilen_hal_tarihi == date.today())
+            tarih_label = "BUGÜNÜN" if is_today else f"{secilen_hal_tarihi.strftime('%d.%m.%Y')} TARİHLİ"
+
+            st.info(f"📦 **Sevkiyatçılar İçin Toplu Dağıtım Çıktısı:** {tarih_label} halden girilen tüm ürünlerin ve şube dağıtımlarının olduğu tek Excel dosyasını (A4 Yatay Baskıya Hazır) indirebilirsiniz.")
+            
+            toplu_excel_bytes = generate_toplu_hal_excel(hal_tarih_str)
             if toplu_excel_bytes:
                 st.download_button(
-                    label="🚚 BUGÜNÜN TÜM SEVKİYAT DAĞITIM LİSTESİNİ İNDİR (YAZDIRMAYA HAZIR EXCEL)",
+                    label=f"🚚 {tarih_label} TÜM SEVKİYAT DAĞITIM LİSTESİNİ İNDİR (YAZDIRMAYA HAZIR EXCEL)",
                     data=toplu_excel_bytes,
-                    file_name=f"Toplu_Hal_Sevkiyat_Listesi_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"Toplu_Hal_Sevkiyat_Listesi_{hal_tarih_str}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     type="primary",
                     use_container_width=True
                 )
             else:
-                st.caption("ℹ️ *Bugün için henüz halden girilmiş herhangi bir dağıtım bulunmuyor.*")
+                st.caption(f"ℹ️ *{secilen_hal_tarihi.strftime('%d.%m.%Y')} tarihi için henüz halden girilmiş herhangi bir dağıtım bulunmuyor.*")
 
             st.divider()
 
@@ -637,7 +658,7 @@ else:
                             if miktar > 0:
                                 kayit_listesi.append({
                                     "sube": sube,
-                                    "tarih": bugun_str,
+                                    "tarih": hal_tarih_str,
                                     "urun_kodu": secilen_urun_kod,
                                     "urun_adi": secilen_urun_ad,
                                     "mevcut_stok": "0",
@@ -646,7 +667,7 @@ else:
                         
                         if len(kayit_listesi) > 0:
                             supabase.table("siparisler").insert(kayit_listesi).execute()
-                            st.success(f"✅ **{secilen_urun_ad}** dağıtımı başarıyla kaydedildi!")
+                            st.success(f"✅ **{secilen_urun_ad}** dağıtımı ({hal_tarih_str} tarihi için) başarıyla kaydedildi!")
                             st.rerun()
                         else:
                             st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
@@ -657,7 +678,7 @@ else:
                     st.download_button(
                         label="📄 Sadece Bu Ürünün Excel Listesini İndir",
                         data=hal_excel_bytes,
-                        file_name=f"Hal_Dagitim_{secilen_urun_kod}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        file_name=f"Hal_Dagitim_{secilen_urun_kod}_{hal_tarih_str}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
@@ -685,194 +706,77 @@ else:
             f_col1, f_col2, f_col3 = st.columns([1.2, 1, 2])
             
             with f_col1:
-                tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=False)
-            
+                secilen_tarih = st.date_input("📅 Tarih Seçin", value=date.today())
+                tarih_str = secilen_tarih.strftime('%Y-%m-%d')
+
             with f_col2:
-                if not tum_gecmis:
-                    secili_tarih = st.date_input("Tarih Seçin:", value=date.today())
-                    secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
-                    tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
-                else:
-                    tarih_etiket = "Tüm_Gecmis"
+                filtre_sube = st.selectbox("🏬 Şube Filtresi", ["Tümü"] + SUBE_LISTESI)
 
-            if tum_gecmis:
-                res = supabase.table("siparisler").select("sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari").order("id", desc=True).execute()
-            else:
-                res = supabase.table("siparisler").select("sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari").eq("tarih", secili_tarih_str).order("id", desc=True).execute()
-
-            df_siparisler = pd.DataFrame(res.data)
-
-            if df_siparisler.empty:
-                st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) kayıtlı sipariş veya dağıtım bulunmamaktadır.")
-            else:
-                df_siparisler = df_siparisler.rename(columns={
-                    'sube': 'Şube',
-                    'tarih': 'Tarih',
-                    'urun_kodu': 'Ürün Kodu',
-                    'urun_adi': 'Ürün Adı',
-                    'mevcut_stok': 'Mevcut Stok',
-                    'siparis_miktari': 'Sipariş Miktarı'
-                })
-
-                with f_col3:
-                    secili_subeler = st.multiselect("Şube Filtresi:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
-                
-                filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)].copy()
-
-                st.divider()
-
-                filtreli_df['Sipariş Miktarı'] = pd.to_numeric(filtreli_df['Sipariş Miktarı'], errors='coerce').fillna(0)
-
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Toplam Kalem", len(filtreli_df))
-                col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
-                toplam_sip_miktari = filtreli_df['Sipariş Miktarı'].sum()
-                col3.metric("Toplam Miktar", f"{toplam_sip_miktari:,.0f} Kasa")
-
-                st.divider()
-
-                pivot_genel = pd.pivot_table(
-                    filtreli_df, 
-                    values=['Mevcut Stok', 'Sipariş Miktarı'], 
-                    index=['Ürün Kodu', 'Ürün Adı'], 
-                    columns=['Şube'], 
-                    aggfunc='first', 
-                    fill_value="0"
-                )
-
-                pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
-                pivot_genel = pivot_genel.sort_index(axis=1, level=0)
-                pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
-
-                toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
-                
-                def calc_stok_toplam(g):
-                    num_sum = 0
-                    rd_cnt = 0
-                    for val in g['Mevcut Stok']:
-                        val_str = str(val).strip()
-                        if val_str == "Reyon Dolu":
-                            rd_cnt += 1
-                        else:
-                            try:
-                                num_sum += float(val_str)
-                            except ValueError:
-                                pass
-                    res = []
-                    if num_sum > 0:
-                        res.append(f"{int(num_sum)} Kasa")
-                    if rd_cnt > 0:
-                        res.append(f"{rd_cnt} RD")
-                    return " + ".join(res) if res else "0"
-
-                toplam_stok_str = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı']).apply(calc_stok_toplam)
-
-                pivot_genel[('GENEL TOPLAM', 'Top. Stok / RD')] = toplam_stok_str
-                pivot_genel[('GENEL TOPLAM', 'Top. Sipariş')] = toplam_siparis
-
-                st.dataframe(pivot_genel, use_container_width=True, height=550)
-
-                st.divider()
-
-                def generate_excel(df_pivot, etiket):
-                    output = io.BytesIO()
-                    wb = openpyxl.Workbook()
-                    ws = wb.active
-                    ws.title = "Siparis_Cizelgesi"
-
-                    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-                    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-                    ws.sheet_properties.pageSetUpPr.fitToPage = True
-                    ws.page_setup.fitToWidth = 1
-                    ws.page_setup.fitToHeight = 0
-
-                    thin = Side(border_style="thin", color="D3D3D3")
-                    border = Border(top=thin, left=thin, right=thin, bottom=thin)
-                    header_fill = PatternFill(start_color="F0F2F6", end_color="F0F2F6", fill_type="solid")
-                    font_bold = Font(name="Calibri", size=9, bold=True)
-                    font_normal = Font(name="Calibri", size=8.5)
-
-                    ws.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ MANAV SİPARİŞ ÇİZELGESİ ({etiket})").font = Font(size=12, bold=True)
-                    
-                    ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
-                    ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
-                    
-                    col_idx = 3
-                    for col in df_pivot.columns:
-                        sube_adi = str(col[0]) if isinstance(col, tuple) else str(col)
-                        metrik_adi = str(col[1]) if isinstance(col, tuple) and len(col) > 1 else ""
-                        
-                        ws.cell(row=3, column=col_idx, value=sube_adi).font = font_bold
-                        ws.cell(row=4, column=col_idx, value=metrik_adi).font = font_bold
-                        col_idx += 1
-
-                    for c in range(3, col_idx, 2):
-                        if c + 1 < col_idx:
-                            ws.merge_cells(start_row=3, start_column=c, end_row=3, end_column=c+1)
-
-                    row_idx = 5
-                    for (kodu, adi), row_data in df_pivot.iterrows():
-                        ws.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
-                        ws.cell(row=row_idx, column=2, value=str(adi)).font = font_normal
-                        
-                        c_idx = 3
-                        for val in row_data:
-                            cell_val = ws.cell(row=row_idx, column=c_idx, value=str(val) if val != 0 else "")
-                            cell_val.font = font_normal
-                            cell_val.alignment = Alignment(horizontal="center")
-                            c_idx += 1
-                        row_idx += 1
-
-                    for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=col_idx-1):
-                        for cell in r:
-                            cell.border = border
-                            if cell.row in (3, 4):
-                                cell.fill = header_fill
-                                cell.alignment = Alignment(horizontal="center", vertical="center")
-
-                    ws.column_dimensions['A'].width = 10
-                    ws.column_dimensions['B'].width = 24
-                    for c in range(3, col_idx):
-                        col_letter = openpyxl.utils.get_column_letter(c)
-                        ws.column_dimensions[col_letter].width = 7.5
-
-                    wb.save(output)
-                    return output.getvalue()
-
-                excel_bytes = generate_excel(pivot_genel, tarih_etiket)
-
-                st.download_button(
-                    label="🖨️ A4 Yatay Çıktı İçin Excel Dosyasını İndir",
-                    data=excel_bytes,
-                    file_name=f"Yalcin_Market_Manav_Siparis_{tarih_etiket}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
+            with f_col3:
+                arama_admin = st.text_input("🔍 Ürün Arama (Ad / Kod)", "")
 
             st.divider()
-            st.subheader("🗑️ Veritabanı Temizlik ve Yönetim Alanı")
 
-            with st.expander("⚠️ Geçmiş Verileri Sil / Veritabanını Temizle"):
-                st.warning("⚠️ **DİKKAT:** Buradan yapacağınız silme işlemleri kalıcıdır ve geri alınamaz!")
+            # Supabase Veri Çekme
+            query = supabase.table("siparisler").select("*").eq("tarih", tarih_str)
+            if filtre_sube != "Tümü":
+                query = query.eq("sube", filtre_sube)
+
+            res = query.execute()
+
+            if res.data:
+                df_res = pd.DataFrame(res.data)
+                df_res['siparis_miktari'] = pd.to_numeric(df_res['siparis_miktari'], errors='coerce').fillna(0)
                 
-                silme_tipi = st.radio("Silme İşlemi Türünü Seçin:", [
-                    "📅 Belirli Bir Tarihten ÖNCESİNİ Sil (Eski Veri Temizliği)", 
-                    "🔥 TÜM Veritabanını Sıfırla (Tüm Siparişleri Sil)"
-                ])
-                
-                if "Belirli Bir Tarihten ÖNCESİNİ Sil" in silme_tipi:
-                    silinecek_tarih = st.date_input("Bu tarihten önceki TÜM siparişler silinsin:", value=date.today())
-                    sil_str = silinecek_tarih.strftime('%Y-%m-%d')
+                if arama_admin:
+                    df_res = df_res[
+                        df_res['urun_adi'].str.contains(arama_admin, case=False, na=False) | 
+                        df_res['urun_kodu'].str.contains(arama_admin, case=False, na=False)
+                    ]
+
+                if not df_res.empty:
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("📦 Toplam Sipariş Veren Şube", f"{df_res['sube'].nunique()} Şube")
+                    m2.metric("🍉 Toplam Sipariş Kalemi", f"{len(df_res)} Kalem")
+                    m3.metric("📊 Toplam Sipariş Miktarı", f"{int(df_res['siparis_miktari'].sum())} Kasa")
+
+                    st.subheader("📋 Detaylı Veri Tablosu")
                     
-                    if st.button(f"🚨 {silinecek_tarih.strftime('%d.%m.%Y')} Tarihinden Önceki Verileri Sil", type="primary"):
-                        supabase.table("siparisler").delete().lt("tarih", sil_str).execute()
-                        st.success(f"✅ {silinecek_tarih.strftime('%d.%m.%Y')} tarihinden önceki tüm sipariş kayıtları başarıyla silindi!")
-                        st.rerun()
+                    df_display = df_res.rename(columns={
+                        "sube": "Şube",
+                        "urun_kodu": "Ürün Kodu",
+                        "urun_adi": "Ürün Adı",
+                        "mevcut_stok": "Mevcut Stok",
+                        "siparis_miktari": "Sipariş Miktarı (Kasa)"
+                    })[['Şube', 'Ürün Kodu', 'Ürün Adı', 'Mevcut Stok', 'Sipariş Miktarı (Kasa)']]
+                    
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-                elif "TÜM Veritabanını Sıfırla" in silme_tipi:
-                    onay = st.checkbox("Evet, sistemdeki TÜM sipariş geçmişini kalıcı olarak silmek istediğimi onaylıyorum.")
-                    if onay:
-                        if st.button("🔥 TÜM SİPARİŞ VERİTABANINI TEMİZLE", type="primary"):
-                            supabase.table("siparisler").delete().neq("id", 0).execute()
-                            st.success("✅ Veritabanındaki tüm siparişler tamamen sıfırlandı!")
-                            st.rerun()
+                    st.divider()
+
+                    st.subheader("📊 Şube - Ürün Dağıtım Matrisi")
+                    pivot_df = pd.pivot_table(
+                        df_res,
+                        values='siparis_miktari',
+                        index=['urun_kodu', 'urun_adi'],
+                        columns=['sube'],
+                        aggfunc='sum',
+                        fill_value=0
+                    )
+                    pivot_df['TOPLAM'] = pivot_df.sum(axis=1)
+                    st.dataframe(pivot_df, use_container_width=True)
+
+                    excel_bytes = generate_toplu_hal_excel(tarih_str)
+                    if excel_bytes:
+                        st.download_button(
+                            label="📥 Seçilen Tarihin Raporunu Excel Olarak İndir (A4 Baskıya Hazır)",
+                            data=excel_bytes,
+                            file_name=f"Merkez_Siparis_Raporu_{tarih_str}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary",
+                            use_container_width=True
+                        )
+                else:
+                    st.info("ℹ️ Aranan kriterlere uygun sipariş verisi bulunamadı.")
+            else:
+                st.info(f"ℹ️ {secilen_tarih.strftime('%d.%m.%Y')} tarihi için henüz kaydedilmiş bir sipariş bulunmuyor.")
