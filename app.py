@@ -315,6 +315,28 @@ else:
 
                 st.divider()
 
+                # --- 🚛 ŞUBEYE ÖZEL HAL DAĞITIM BİLGİSİ EKRANI ---
+                with st.expander(f"🚛 **{secilen_sube} - Halden Şubemize Ayrılan/Gelen Mal Miktarları (Bugün)**", expanded=True):
+                    hal_res = supabase.table("siparisler").select("urun_kodu, urun_adi, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                    
+                    if hal_res.data:
+                        hal_df = pd.DataFrame(hal_res.data)
+                        hal_df = hal_df[hal_df['siparis_miktari'] > 0] # Sadece miktarı olanları süz
+                        
+                        if not hal_df.empty:
+                            hal_df = hal_df.rename(columns={
+                                'urun_kodu': 'Ürün Kodu',
+                                'urun_adi': 'Ürün Adı',
+                                'siparis_miktari': 'Gelen / Ayrılan Miktar (Kasa)'
+                            })
+                            st.dataframe(hal_df, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("ℹ️ Bugün için şubenize henüz halden yüklenen veya dağıtılan mal girişi yapılmadı.")
+                    else:
+                        st.info("ℹ️ Bugün için şubenize henüz halden yüklenen veya dağıtılan mal girişi yapılmadı.")
+
+                st.divider()
+
                 res = supabase.table("siparisler").select("urun_kodu, mevcut_stok, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                 
                 kayitli_dict = {}
