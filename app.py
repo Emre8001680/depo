@@ -30,7 +30,7 @@ except Exception as e:
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
 # -------------------------------------------------------------
-# 🎨 DİNAMİK TEMA UYUMLU CSS DÜZENLEMELERİ
+# 🎨 CSS DÜZENLEMELERİ
 # -------------------------------------------------------------
 st.markdown("""
     <style>
@@ -167,7 +167,7 @@ if "admin_authed" not in st.session_state:
     st.session_state.admin_authed = False
 
 
-# TEK ÜRÜN EXCEL ÇIKTISI
+# EXCEL ÇIKTILARI
 def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan, tarih_str):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -229,7 +229,6 @@ def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan, tar
     return output.getvalue()
 
 
-# 🚚 TOPLU HAL DAĞITIM EXCEL ÇIKTISI (YENİ TABLODAN ÇEKER: hal_dagitim)
 def generate_toplu_hal_excel(tarih_sorgu_str):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -243,7 +242,6 @@ def generate_toplu_hal_excel(tarih_sorgu_str):
     ws1.page_setup.fitToWidth = 1
     ws1.page_setup.fitToHeight = 0
     
-    # Artık hal_dagitim tablosundan sorgu çekiyoruz
     res = supabase.table("hal_dagitim").select("sube, urun_kodu, urun_adi, dağıtılan_miktar").eq("tarih", tarih_sorgu_str).execute()
     
     if not res.data:
@@ -442,7 +440,6 @@ else:
 
                 st.divider()
 
-                # Hal Dağıtım Verisini Artık 'hal_dagitim' Tablosundan Çekiyor
                 with st.expander(f"🚛 **{secilen_sube} - Halden Şubemize Ayrılan/Gelen Mal Miktarları (Bugün)**", expanded=True):
                     hal_res = supabase.table("hal_dagitim").select("urun_kodu, urun_adi, dağıtılan_miktar").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                     
@@ -465,7 +462,7 @@ else:
 
                 st.divider()
 
-                # Şube Kendi Siparişini 'siparisler' Tablosundan Sorgular
+                # Bugünkü Şube Kayıtlarını Çek
                 res = supabase.table("siparisler").select("urun_kodu, mevcut_stok, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                 
                 kayitli_dict = {}
@@ -511,7 +508,8 @@ else:
                         with col2:
                             siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}")
                             
-                        if (stok_kayit != "0" and stok_kayit != "0.0") or siparis > 0:
+                        # Stok veya sipariş verisi girilmişse kaydet
+                        if stok_kayit != "0" or siparis > 0:
                             kaydedilecek_veriler.append({
                                 "sube": secilen_sube,
                                 "tarih": bugun_str,
@@ -527,6 +525,7 @@ else:
 
                 with btn_col1:
                     if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
+                        # YALNIZCA o günkü ve o şubeye ait siparişleri silip yenilerini ekler (Geçmiş günler korunur!)
                         supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                         if len(kaydedilecek_veriler) > 0:
                             supabase.table("siparisler").insert(kaydedilecek_veriler).execute()
@@ -657,7 +656,6 @@ else:
                                 })
                         
                         if len(kayit_listesi) > 0:
-                            # Kayıtlar Doğrudan 'hal_dagitim' Tablosuna Yapılıyor
                             supabase.table("hal_dagitim").insert(kayit_listesi).execute()
                             st.success(f"✅ **{secilen_urun_ad}** dağıtımı ({hal_tarih_str} tarihi için) başarıyla kaydedildi!")
                             st.rerun()
@@ -707,7 +705,6 @@ else:
 
             st.divider()
 
-            # MERKEZ PANELİNDE İKİ AYRI SEKME SIFIR KARIŞIKLIK SAĞLAR:
             tab_sip, tab_hal = st.tabs(["🛒 Şube Sipariş ve Stok Talepleri", "🚛 Hal Sevkiyat ve Dağıtım Verileri"])
 
             # SEKME 1: ŞUBELERİN İSTEDİĞİ GERÇEK SİPARİŞLER (siparisler tablosu)
@@ -721,6 +718,7 @@ else:
                 if res.data:
                     df_res = pd.DataFrame(res.data)
                     df_res['siparis_miktari'] = pd.to_numeric(df_res['siparis_miktari'], errors='coerce').fillna(0)
+                    df_res['mevcut_stok'] = df_res['mevcut_stok'].fillna("0").astype(str)
                     
                     if arama_admin:
                         df_res = df_res[
@@ -748,16 +746,22 @@ else:
 
                         st.divider()
 
-                        st.subheader("📊 Şube - Sipariş Dağıtım Matrisi")
+                        st.subheader("📊 Şube - Stok ve Sipariş Dağıtım Matrisi")
+                        st.caption("Görünüm Biçimi: [Mevcut Stok] / [Sipariş Miktarı]")
+                        
+                        # Matriste Hem Stok Hem Siparişi Gösterme Hücre Biçimlendirmesi
+                        df_res['stok_siparis_str'] = df_res.apply(
+                            lambda r: f"Stok: {r['mevcut_stok']} | Sip: {int(r['siparis_miktari'])} Kasa", axis=1
+                        )
+
                         pivot_df = pd.pivot_table(
                             df_res,
-                            values='siparis_miktari',
+                            values='stok_siparis_str',
                             index=['urun_kodu', 'urun_adi'],
                             columns=['sube'],
-                            aggfunc='sum',
-                            fill_value=0
+                            aggfunc='first',
+                            fill_value="-"
                         )
-                        pivot_df['TOPLAM SİPARİŞ'] = pivot_df.sum(axis=1)
                         st.dataframe(pivot_df, use_container_width=True)
                     else:
                         st.info("ℹ️ Aranan kriterlere uygun şube sipariş verisi bulunamadı.")
