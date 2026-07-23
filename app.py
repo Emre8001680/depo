@@ -1,7 +1,6 @@
-# Let's inspect or verify openpyxl script logic to generate the full Python code file if needed or directly write the python script to update app.py
-# Wait, the user wants the updated full code for Streamlit app with Excel page setup (orientation=LANDSCAPE, fitToWidth=1) and CSS print layout (@media print) integrated seamlessly.
+# Fix indentation inside triple quote in app_code
 
-app_code = '''import io
+app_code = """import io
 import base64
 from datetime import datetime, date
 import pandas as pd
@@ -35,7 +34,7 @@ st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", pag
 # -------------------------------------------------------------
 # 🎨 DİNAMİK TEMA VE YAZDIRMA (PRINT) CSS DÜZENLEMELERİ
 # -------------------------------------------------------------
-st.markdown("""
+st.markdown(\"\"\"
     <style>
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden !important;}
@@ -118,7 +117,7 @@ st.markdown("""
             }
         }
     </style>
-""", unsafe_allow_html=True)
+\"\"\", unsafe_allow_html=True)
 
 SUBE_LISTESI = [
     "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadiri Yolu", 
@@ -400,11 +399,7 @@ if not st.session_state.site_giris_yapildi:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             
-            st.markdown(f'''
-                <div class="logo-card-container">
-                    <img src="data:image/png;base64,{encoded_string}" class="animated-logo">
-                </div>
-            ''', unsafe_allow_html=True)
+            st.markdown(f'<div class="logo-card-container"><img src="data:image/png;base64,{encoded_string}" class="animated-logo"></div>', unsafe_allow_html=True)
         except Exception:
             st.warning("Logo yüklenemedi.")
 
@@ -910,9 +905,9 @@ else:
                             supabase.table("siparisler").delete().neq("id", 0).execute()
                             st.success("✅ Veritabanındaki tüm siparişler tamamen sıfırlandı!")
                             st.rerun()
-'''
+"""
 
 with open("app.py", "w", encoding="utf-8") as f:
     f.write(app_code)
 
-print("app.py updated successfully!")
+print("app.py successfully written!")
