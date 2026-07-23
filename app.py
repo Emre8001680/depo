@@ -150,7 +150,7 @@ URUNLER = [
     {"KODU": "051277", "ADI": "MNV.ZENCEFIL"}
 ]
 
-# Session State
+# Session State Initializations
 if "site_giris_yapildi" not in st.session_state:
     st.session_state.site_giris_yapildi = False
 
@@ -166,7 +166,8 @@ if "hal_authed" not in st.session_state:
 if "admin_authed" not in st.session_state:
     st.session_state.admin_authed = False
 
-# HAL DAĞITIMI EXCEL ÇIKTISI FONKSİYONU
+
+# TEK TEK ÜRÜN EXCEL ÇIKTISI
 def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -223,6 +224,122 @@ def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan):
 
     ws.column_dimensions['A'].width = 25
     ws.column_dimensions['B'].width = 25
+
+    wb.save(output)
+    return output.getvalue()
+
+
+# 🚚 TOPLU HAL DAĞITIM EXCEL ÇIKTISI (SEVKİYATÇILAR İÇİN TEK DOSYA)
+def generate_toplu_hal_excel(bugun_str):
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    
+    # 1. Sayfa: Genel Şube - Ürün Matris Tablosu
+    ws1 = wb.active
+    ws1.title = "Sevkiyat_Matris_Tablosu"
+    
+    res = supabase.table("siparisler").select("sube, urun_kodu, urun_adi, siparis_miktari").eq("tarih", bugun_str).execute()
+    
+    if not res.data:
+        return None
+
+    df_hal = pd.DataFrame(res.data)
+    df_hal['siparis_miktari'] = pd.to_numeric(df_hal['siparis_miktari'], errors='coerce').fillna(0)
+    df_hal = df_hal[df_hal['siparis_miktari'] > 0]
+
+    if df_hal.empty:
+        return None
+
+    thin = Side(border_style="thin", color="D3D3D3")
+    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    font_bold = Font(name="Calibri", size=10, bold=True)
+    font_title = Font(name="Calibri", size=13, bold=True)
+    font_normal = Font(name="Calibri", size=9)
+
+    ws1.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DAĞITIM MATRİSİ ({datetime.now().strftime('%d.%m.%Y')})").font = font_title
+
+    # Pivot Tablo Oluşturma (Satır: Ürünler, Sütun: Şubeler)
+    pivot_hal = pd.pivot_table(
+        df_hal, 
+        values='siparis_miktari', 
+        index=['urun_kodu', 'urun_adi'], 
+        columns=['sube'], 
+        aggfunc='sum', 
+        fill_value=0
+    )
+    pivot_hal['TOPLAM SEVK'] = pivot_hal.sum(axis=1)
+
+    # Başlıkları Yaz
+    ws1.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
+    ws1.cell(row=3, column=2, value="Ürün Adı").font = font_bold
+    ws1.cell(row=3, column=1).fill = header_fill
+    ws1.cell(row=3, column=2).fill = header_fill
+    ws1.cell(row=3, column=1).border = border
+    ws1.cell(row=3, column=2).border = border
+
+    col_idx = 3
+    sube_cols = [c for c in pivot_hal.columns if c != 'TOPLAM SEVK'] + ['TOPLAM SEVK']
+    for sube in sube_cols:
+        cell = ws1.cell(row=3, column=col_idx, value=sube)
+        cell.font = font_bold
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        col_idx += 1
+
+    row_idx = 4
+    for (kodu, adi), r_data in pivot_hal.iterrows():
+        ws1.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
+        ws1.cell(row=row_idx, column=2, value=str(adi)).font = font_normal
+        ws1.cell(row=row_idx, column=1).border = border
+        ws1.cell(row=row_idx, column=2).border = border
+
+        c_idx = 3
+        for sube in sube_cols:
+            val = r_data[sube]
+            val_str = f"{int(val)} Kasa" if val > 0 else ""
+            c = ws1.cell(row=row_idx, column=c_idx, value=val_str)
+            c.font = font_bold if sube == 'TOPLAM SEVK' else font_normal
+            c.alignment = Alignment(horizontal="center")
+            c.border = border
+            c_idx += 1
+        row_idx += 1
+
+    ws1.column_dimensions['A'].width = 12
+    ws1.column_dimensions['B'].width = 25
+    for c in range(3, col_idx):
+        ws1.column_dimensions[openpyxl.utils.get_column_letter(c)].width = 14
+
+    # 2. Sayfa: Detaylı Liste Sayfası
+    ws2 = wb.create_sheet(title="Urun_Bazli_Liste")
+    ws2.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DETAY LİSTESİ ({datetime.now().strftime('%d.%m.%Y')})").font = font_title
+
+    headers2 = ["Ürün Kodu", "Ürün Adı", "Şube Adı", "Verilecek Miktar (Kasa)"]
+    for c_i, h in enumerate(headers2, 1):
+        cell = ws2.cell(row=3, column=c_i, value=h)
+        cell.font = font_bold
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    r2_idx = 4
+    for _, row_item in df_hal.sort_values(by=['urun_adi', 'sube']).iterrows():
+        ws2.cell(row=r2_idx, column=1, value=str(row_item['urun_kodu'])).font = font_normal
+        ws2.cell(row=r2_idx, column=2, value=str(row_item['urun_adi'])).font = font_normal
+        ws2.cell(row=r2_idx, column=3, value=str(row_item['sube'])).font = font_normal
+        c4 = ws2.cell(row=r2_idx, column=4, value=f"{int(row_item['siparis_miktari'])} Kasa")
+        c4.font = font_bold
+        c4.alignment = Alignment(horizontal="center")
+
+        for ci in range(1, 5):
+            ws2.cell(row=r2_idx, column=ci).border = border
+        r2_idx += 1
+
+    ws2.column_dimensions['A'].width = 12
+    ws2.column_dimensions['B'].width = 25
+    ws2.column_dimensions['C'].width = 18
+    ws2.column_dimensions['D'].width = 22
 
     wb.save(output)
     return output.getvalue()
@@ -315,13 +432,12 @@ else:
 
                 st.divider()
 
-                # --- 🚛 ŞUBEYE ÖZEL HAL DAĞITIM BİLGİSİ EKRANI (HATA DÜZELTİLDİ) ---
+                # --- 🚛 ŞUBEYE ÖZEL HAL DAĞITIM BİLGİSİ EKRANI ---
                 with st.expander(f"🚛 **{secilen_sube} - Halden Şubemize Ayrılan/Gelen Mal Miktarları (Bugün)**", expanded=True):
                     hal_res = supabase.table("siparisler").select("urun_kodu, urun_adi, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                     
                     if hal_res.data:
                         hal_df = pd.DataFrame(hal_res.data)
-                        # Veriyi sayısal tipe güvenli dönüştür
                         hal_df['siparis_miktari'] = pd.to_numeric(hal_df['siparis_miktari'], errors='coerce').fillna(0)
                         hal_df = hal_df[hal_df['siparis_miktari'] > 0]
                         
@@ -435,6 +551,27 @@ else:
 
             st.divider()
 
+            # -----------------------------------------------------------------
+            # 🚚 SEVKİYATÇILAR İÇİN TOPLU EXCEL İNDİRME ALANI (YENİ EKLENDİ)
+            # -----------------------------------------------------------------
+            st.info("📦 **Sevkiyatçılar İçin Toplu Dağıtım Çıktısı:** Bugün halden girilen tüm ürünlerin ve şube dağıtımlarının olduğu tek Excel dosyasını buradan indirebilirsiniz.")
+            
+            toplu_excel_bytes = generate_toplu_hal_excel(bugun_str)
+            if toplu_excel_bytes:
+                st.download_button(
+                    label="🚚 BUGÜNÜN TÜM SEVKİYAT DAĞITIM LİSTESİNİ İNDİR (TOPLU EXCEL)",
+                    data=toplu_excel_bytes,
+                    file_name=f"Toplu_Hal_Sevkiyat_Listesi_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True
+                )
+            else:
+                st.caption("ℹ️ *Bugün için henüz halden girilmiş herhangi bir dağıtım bulunmuyor.*")
+
+            st.divider()
+
+            # Tekil Ürün Girişi Alanı
             urun_listesi_adlar = [f"{u['ADI']} ({u['KODU']})" for u in URUNLER]
             secilen_urun_combo = st.selectbox("🛒 **Halden Alınan Ürünü Seçin:**", urun_listesi_adlar)
             
@@ -498,6 +635,7 @@ else:
                         if len(kayit_listesi) > 0:
                             supabase.table("siparisler").insert(kayit_listesi).execute()
                             st.success(f"✅ **{secilen_urun_ad}** dağıtımı başarıyla kaydedildi!")
+                            st.rerun()
                         else:
                             st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
 
@@ -505,7 +643,7 @@ else:
                 if toplam_dagitilan > 0 and kalan_kasa >= 0:
                     hal_excel_bytes = generate_hal_excel(secilen_urun_ad, secilen_urun_kod, hal_toplam_kasa, dagitim_dict, kalan_kasa)
                     st.download_button(
-                        label="📄 Dağıtım Listesini Excel Olarak İndir (A4 Yatay)",
+                        label="📄 Sadece Bu Ürünün Excel Listesini İndir",
                         data=hal_excel_bytes,
                         file_name=f"Hal_Dagitim_{secilen_urun_kod}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
