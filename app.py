@@ -50,7 +50,6 @@ st.markdown("""
             100% { opacity: 1; transform: scale(1); }
         }
 
-        /* LOGO KART TASARIMI */
         .logo-card-container {
             animation: fadeInZoom 1s ease-out forwards;
             background-color: #ffffff !important;
@@ -70,7 +69,6 @@ st.markdown("""
             display: block;
         }
 
-        /* METİN RENKLERİ */
         .welcome-title {
             text-align: center;
             font-size: 26px;
@@ -91,7 +89,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Fixed Sabit Şube Listesi & Ürünler
 SUBE_LISTESI = [
     "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadiri Yolu", 
     "Nahır Yolu", "Eyup Sultan", "Bulvar", "Düziçi Çarşı", "Aşiyan", "Zeytinlik"
@@ -165,6 +162,71 @@ if "giris_yapilan_sube" not in st.session_state:
 
 if "hal_authed" not in st.session_state:
     st.session_state.hal_authed = False
+
+# HAL DAĞITIMI EXCEL ÇIKTISI FONKSİYONU (A4 YATAY)
+def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan):
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Hal_Dagitim_Listesi"
+
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    thin = Side(border_style="thin", color="000000")
+    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    font_bold = Font(name="Calibri", size=11, bold=True)
+    font_title = Font(name="Calibri", size=14, bold=True)
+    font_normal = Font(name="Calibri", size=10)
+
+    # Başlıklar
+    ws.cell(row=1, column=1, value="YALÇIN MARKETLER ZİNCİRİ - HAL MALI ŞUBE DAĞITIM LİSTESİ").font = font_title
+    ws.cell(row=2, column=1, value=f"Tarih: {datetime.now().strftime('%d.%m.%Y')} | Ürün: {urun_adi} (Kod: {urun_kodu}) | Halden Alınan: {hal_toplam:.0f} Kasa").font = font_bold
+
+    # Tablo Başlıkları
+    headers = ["Şube Adı", "Dağıtılan Miktar (Kasa)"]
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col_num, value=header)
+        cell.font = font_bold
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    row_idx = 5
+    toplam_dagitilan = 0
+    for sube, miktar in dagitim_dict.items():
+        if miktar > 0:
+            c1 = ws.cell(row=row_idx, column=1, value=sube)
+            c2 = ws.cell(row=row_idx, column=2, value=f"{miktar:.0f} Kasa")
+            
+            c1.font = font_normal
+            c2.font = font_normal
+            c2.alignment = Alignment(horizontal="center")
+            
+            c1.border = border
+            c2.border = border
+            toplam_dagitilan += miktar
+            row_idx += 1
+
+    # Toplam Satırı
+    ws.cell(row=row_idx, column=1, value="TOPLAM DAĞITILAN").font = font_bold
+    c_tot = ws.cell(row=row_idx, column=2, value=f"{toplam_dagitilan:.0f} Kasa")
+    c_tot.font = font_bold
+    c_tot.alignment = Alignment(horizontal="center")
+    
+    ws.cell(row=row_idx, column=1).border = border
+    c_tot.border = border
+
+    ws.column_dimensions['A'].width = 25
+    ws.column_dimensions['B'].width = 25
+
+    wb.save(output)
+    return output.getvalue()
+
 
 # KARŞILAMA EKRANI
 if not st.session_state.site_giris_yapildi:
@@ -319,7 +381,7 @@ else:
                         st.error("🗑️ Bugünkü siparişiniz tamamen silindi!")
                         st.rerun()
 
-    # 2. HAL DAĞITIM PANELİ (YENİ MODÜL - 1. YAKLAŞIM)
+    # 2. HAL DAĞITIM PANELİ
     elif rol == "🚛 Hal Dağıtım Paneli":
         st.markdown("<h2 style='text-align: center;'>🚛 Hal Satınalma ve Dağıtım Paneli</h2>", unsafe_allow_html=True)
         bugun_str = datetime.now().strftime('%Y-%m-%d')
@@ -331,7 +393,7 @@ else:
                     st.session_state.hal_authed = True
                     st.rerun()
                 else:
-                    st.error("❌ Hatalı Satınalma Şifresi! (Varsayılan: 2024)")
+                    st.error("❌ Hatalı Satınalma Şifresi!")
         else:
             st.success("🔓 Satınalma Yetkili Girişi Aktif")
             if st.button("🔒 Oturumu Kapat"):
@@ -354,7 +416,6 @@ else:
             dagitim_dict = {}
             toplam_dagitilan = 0.0
 
-            # Şubeleri 2 kolon halinde göster
             d_col1, d_col2 = st.columns(2)
             
             for i, sube_adi in enumerate(SUBE_LISTESI):
@@ -368,257 +429,52 @@ else:
 
             st.divider()
             
-            # Anlık Kasa Metrikleri
             m1, m2, m3 = st.columns(3)
             m1.metric("Halden Alınan", f"{hal_toplam_kasa:.0f} Kasa")
             m2.metric("Şubelere Dağıtılan", f"{toplam_dagitilan:.0f} Kasa")
             
             if kalan_kasa < 0:
                 m3.metric("⚠️ Fazla Dağıtılan", f"{abs(kalan_kasa):.0f} Kasa", delta_color="inverse")
-                st.error("⚠️ Halden aldığınız miktardan daha fazla dağıtım yaptınız! Lütfen değerleri kontrol edin.")
+                st.error("⚠️ Halden aldığınız miktardan daha fazla dağıtım yaptınız!")
             else:
                 m3.metric("Kalan (Depo/Yedek)", f"{kalan_kasa:.0f} Kasa")
 
-            if st.button("💾 Hal Dağıtımını Kaydet ve Şubelere Bildir", type="primary", use_container_width=True):
-                if hal_toplam_kasa == 0:
-                    st.warning("⚠️ Halden alınan miktar 0 olamaz.")
-                elif kalan_kasa < 0:
-                    st.error("❌ Hata: Alınan miktardan fazlası dağıtılamaz!")
-                else:
-                    # Dağıtılan verileri Supabase'e şubelerin sipariş kaydı olarak veya hal dağıtımı olarak kaydet
-                    kayit_listesi = []
-                    for sube, miktar in dagitim_dict.items():
-                        if miktar > 0:
-                            kayit_listesi.append({
-                                "sube": sube,
-                                "tarih": bugun_str,
-                                "urun_kodu": secilen_urun_kod,
-                                "urun_adi": secilen_urun_ad,
-                                "mevcut_stok": "0",
-                                "siparis_miktari": float(miktar)
-                            })
-                    
-                    if len(kayit_listesi) > 0:
-                        supabase.table("siparisler").insert(kayit_listesi).execute()
-                        st.success(f"✅ **{secilen_urun_ad}** dağıtımı başarıyla kaydedildi!")
-                    else:
-                        st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
-
-    # 3. MERKEZ YÖNETİM PANELİ
-    elif rol == "👑 Merkez Yönetim Paneli":
-        st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
-
-        if "admin_authed" not in st.session_state:
-            st.session_state.admin_authed = False
-
-        if not st.session_state.admin_authed:
-            sifre_giris = st.text_input("🔑 Lütfen Yönetim Şifresini Giriniz:", type="password")
-            if st.button("Giriş Yap", type="primary"):
-                if sifre_giris == YONETICI_SIFRESI:
-                    st.session_state.admin_authed = True
-                    st.rerun()
-                else:
-                    st.error("❌ Hatalı şifre!")
-        else:
-            st.success("🔓 Yetkili Girişi Başarılı")
-            if st.button("🚪 Oturumu Kapat"):
-                st.session_state.admin_authed = False
-                st.rerun()
-
-            st.subheader("📊 Sipariş ve Stok Çizelgesi (Kasa)")
-
-            f_col1, f_col2, f_col3 = st.columns([1.2, 1, 2])
-            
-            with f_col1:
-                tum_gecmis = st.checkbox("Tüm Geçmiş Verileri Göster", value=False)
-            
-            with f_col2:
-                if not tum_gecmis:
-                    secili_tarih = st.date_input("Tarih Seçin:", value=date.today())
-                    secili_tarih_str = secili_tarih.strftime('%Y-%m-%d')
-                    tarih_etiket = secili_tarih.strftime('%d.%m.%Y')
-                else:
-                    tarih_etiket = "Tüm_Gecmis"
-
-            if tum_gecmis:
-                res = supabase.table("siparisler").select("sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari").order("id", desc=True).execute()
-            else:
-                res = supabase.table("siparisler").select("sube, tarih, urun_kodu, urun_adi, mevcut_stok, siparis_miktari").eq("tarih", secili_tarih_str).order("id", desc=True).execute()
-
-            df_siparisler = pd.DataFrame(res.data)
-
-            if df_siparisler.empty:
-                st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) kayıtlı sipariş veya dağıtım bulunmamaktadır.")
-            else:
-                df_siparisler = df_siparisler.rename(columns={
-                    'sube': 'Şube',
-                    'tarih': 'Tarih',
-                    'urun_kodu': 'Ürün Kodu',
-                    'urun_adi': 'Ürün Adı',
-                    'mevcut_stok': 'Mevcut Stok',
-                    'siparis_miktari': 'Sipariş Miktarı'
-                })
-
-                with f_col3:
-                    secili_subeler = st.multiselect("Şube Filtresi:", df_siparisler['Şube'].unique(), default=df_siparisler['Şube'].unique())
-                
-                filtreli_df = df_siparisler[df_siparisler['Şube'].isin(secili_subeler)].copy()
-
-                st.divider()
-
-                filtreli_df['Sipariş Miktarı'] = pd.to_numeric(filtreli_df['Sipariş Miktarı'], errors='coerce').fillna(0)
-
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Toplam Kalem", len(filtreli_df))
-                col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
-                toplam_sip_miktari = filtreli_df['Sipariş Miktarı'].sum()
-                col3.metric("Toplam Miktar", f"{toplam_sip_miktari:,.0f} Kasa")
-
-                st.divider()
-
-                pivot_genel = pd.pivot_table(
-                    filtreli_df, 
-                    values=['Mevcut Stok', 'Sipariş Miktarı'], 
-                    index=['Ürün Kodu', 'Ürün Adı'], 
-                    columns=['Şube'], 
-                    aggfunc='first', 
-                    fill_value="0"
-                )
-
-                pivot_genel = pivot_genel.swaplevel(0, 1, axis=1)
-                pivot_genel = pivot_genel.sort_index(axis=1, level=0)
-                pivot_genel = pivot_genel.rename(columns={'Mevcut Stok': 'Stok', 'Sipariş Miktarı': 'Sip.'})
-
-                toplam_siparis = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı'])['Sipariş Miktarı'].sum()
-                
-                def calc_stok_toplam(g):
-                    num_sum = 0
-                    rd_cnt = 0
-                    for val in g['Mevcut Stok']:
-                        val_str = str(val).strip()
-                        if val_str == "Reyon Dolu":
-                            rd_cnt += 1
-                        else:
-                            try:
-                                num_sum += float(val_str)
-                            except:
-                                pass
-                    res = []
-                    if num_sum > 0:
-                        res.append(f"{int(num_sum)} Kasa")
-                    if rd_cnt > 0:
-                        res.append(f"{rd_cnt} RD")
-                    return " + ".join(res) if res else "0"
-
-                toplam_stok_str = filtreli_df.groupby(['Ürün Kodu', 'Ürün Adı']).apply(calc_stok_toplam)
-
-                pivot_genel[('GENEL TOPLAM', 'Top. Stok / RD')] = toplam_stok_str
-                pivot_genel[('GENEL TOPLAM', 'Top. Sipariş')] = toplam_siparis
-
-                st.dataframe(pivot_genel, use_container_width=True, height=550)
-
-                st.divider()
-
-                def generate_excel(df_pivot, etiket):
-                    output = io.BytesIO()
-                    wb = openpyxl.Workbook()
-                    ws = wb.active
-                    ws.title = "Siparis_Cizelgesi"
-
-                    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-                    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-                    ws.sheet_properties.pageSetUpPr.fitToPage = True
-                    ws.page_setup.fitToWidth = 1
-                    ws.page_setup.fitToHeight = 0
-
-                    thin = Side(border_style="thin", color="D3D3D3")
-                    border = Border(top=thin, left=thin, right=thin, bottom=thin)
-                    header_fill = PatternFill(start_color="F0F2F6", end_color="F0F2F6", fill_type="solid")
-                    font_bold = Font(name="Calibri", size=9, bold=True)
-                    font_normal = Font(name="Calibri", size=8.5)
-
-                    ws.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ MANAV SİPARİŞ ÇİZELGESİ ({etiket})").font = Font(size=12, bold=True)
-                    
-                    ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
-                    ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
-                    
-                    col_idx = 3
-                    for col in df_pivot.columns:
-                        sube_adi = str(col[0]) if isinstance(col, tuple) else str(col)
-                        metrik_adi = str(col[1]) if isinstance(col, tuple) and len(col) > 1 else ""
-                        
-                        ws.cell(row=3, column=col_idx, value=sube_adi).font = font_bold
-                        ws.cell(row=4, column=col_idx, value=metrik_adi).font = font_bold
-                        col_idx += 1
-
-                    for c in range(3, col_idx, 2):
-                        if c + 1 < col_idx:
-                            ws.merge_cells(start_row=3, start_column=c, end_row=3, end_column=c+1)
-
-                    row_idx = 5
-                    for (kodu, adi), row_data in df_pivot.iterrows():
-                        ws.cell(row=row_idx, column=1, value=str(kodu)).font = font_normal
-                        ws.cell(row=row_idx, column=2, value=str(adi)).font = font_normal
-                        
-                        c_idx = 3
-                        for val in row_data:
-                            cell_val = ws.cell(row=row_idx, column=c_idx, value=str(val) if val != 0 else "")
-                            cell_val.font = font_normal
-                            cell_val.alignment = Alignment(horizontal="center")
-                            c_idx += 1
-                        row_idx += 1
-
-                    for r in ws.iter_rows(min_row=3, max_row=row_idx-1, min_col=1, max_col=col_idx-1):
-                        for cell in r:
-                            cell.border = border
-                            if cell.row in (3, 4):
-                                cell.fill = header_fill
-                                cell.alignment = Alignment(horizontal="center", vertical="center")
-
-                    ws.column_dimensions['A'].width = 10
-                    ws.column_dimensions['B'].width = 24
-                    for c in range(3, col_idx):
-                        col_letter = openpyxl.utils.get_column_letter(c)
-                        ws.column_dimensions[col_letter].width = 7.5
-
-                    wb.save(output)
-                    return output.getvalue()
-
-                excel_bytes = generate_excel(pivot_genel, tarih_etiket)
-
-                st.download_button(
-                    label="🖨️ A4 Yatay Çıktı İçin Excel Dosyasını İndir",
-                    data=excel_bytes,
-                    file_name=f"Yalcin_Market_Manav_Siparis_{tarih_etiket}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary"
-                )
-
-            # VERİTABANINI TEMİZLEME ALANI
             st.divider()
-            st.subheader("🗑️ Veritabanı Temizlik ve Yönetim Alanı")
 
-            with st.expander("⚠️ Geçmiş Verileri Sil / Veritabanını Temizle"):
-                st.warning("⚠️ **DİKKAT:** Buradan yapacağınız silme işlemleri kalıcıdır ve geri alınamaz!")
-                
-                silme_tipi = st.radio("Silme İşlemi Türünü Seçin:", [
-                    "📅 Belirli Bir Tarihten ÖNCESİNİ Sil (Eski Veri Temizliği)", 
-                    "🔥 TÜM Veritabanını Sıfırla (Tüm Siparişleri Sil)"
-                ])
-                
-                if "Belirli Bir Tarihten ÖNCESİNİ Sil" in silme_tipi:
-                    silinecek_tarih = st.date_input("Bu tarihten önceki TÜM siparişler silinsin:", value=date.today())
-                    sil_str = silinecek_tarih.strftime('%Y-%m-%d')
-                    
-                    if st.button(f"🚨 {silinecek_tarih.strftime('%d.%m.%Y')} Tarihinden Önceki Verileri Sil", type="primary"):
-                        supabase.table("siparisler").delete().lt("tarih", sil_str).execute()
-                        st.success(f"✅ {silinecek_tarih.strftime('%d.%m.%Y')} tarihinden önceki tüm sipariş kayıtları başarıyla silindi!")
-                        st.rerun()
+            h_btn1, h_btn2 = st.columns(2)
 
-                elif "TÜM Veritabanını Sıfırla" in silme_tipi:
-                    onay = st.checkbox("Evet, sistemdeki TÜM sipariş geçmişini kalıcı olarak silmek istediğimi onaylıyorum.")
-                    if onay:
-                        if st.button("🔥 TÜM SİPARİŞ VERİTABANINI TEMİZLE", type="primary"):
-                            supabase.table("siparisler").delete().neq("id", 0).execute()
-                            st.success("✅ Veritabanındaki tüm siparişler tamamen sıfırlandı!")
-                            st.rerun()
+            with h_btn1:
+                if st.button("💾 Hal Dağıtımını Kaydet ve Şubelere Bildir", type="primary", use_container_width=True):
+                    if hal_toplam_kasa == 0:
+                        st.warning("⚠️ Halden alınan miktar 0 olamaz.")
+                    elif kalan_kasa < 0:
+                        st.error("❌ Hata: Alınan miktardan fazlası dağıtılamaz!")
+                    else:
+                        kayit_listesi = []
+                        for sube, miktar in dagitim_dict.items():
+                            if miktar > 0:
+                                kayit_listesi.append({
+                                    "sube": sube,
+                                    "tarih": bugun_str,
+                                    "urun_kodu": secilen_urun_kod,
+                                    "urun_adi": secilen_urun_ad,
+                                    "mevcut_stok": "0",
+                                    "siparis_miktari": float(miktar)
+                                })
+                        
+                        if len(kayit_listesi) > 0:
+                            supabase.table("siparisler").insert(kayit_listesi).execute()
+                            st.success(f"✅ **{secilen_urun_ad}** dağıtımı başarıyla kaydedildi!")
+                        else:
+                            st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
+
+            with h_btn2:
+                if toplam_dagitilan > 0 and kalan_kasa >= 0:
+                    hal_excel_bytes = generate_hal_excel(secilen_urun_ad, secilen_urun_kod, hal_toplam_kasa, dagitim_dict, kalan_kasa)
+                    st.download_button(
+                        label="📄 Dağıtım Listesini Excel Olarak İndir (A4 Yatay)",
+                        data=hal_excel_bytes,
+                        file_name=f"Hal_Dagitim_{secilen_urun_kod}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
