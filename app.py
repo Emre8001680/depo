@@ -315,13 +315,15 @@ else:
 
                 st.divider()
 
-                # --- 🚛 ŞUBEYE ÖZEL HAL DAĞITIM BİLGİSİ EKRANI ---
+                # --- 🚛 ŞUBEYE ÖZEL HAL DAĞITIM BİLGİSİ EKRANI (HATA DÜZELTİLDİ) ---
                 with st.expander(f"🚛 **{secilen_sube} - Halden Şubemize Ayrılan/Gelen Mal Miktarları (Bugün)**", expanded=True):
                     hal_res = supabase.table("siparisler").select("urun_kodu, urun_adi, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                     
                     if hal_res.data:
                         hal_df = pd.DataFrame(hal_res.data)
-                        hal_df = hal_df[hal_df['siparis_miktari'] > 0] # Sadece miktarı olanları süz
+                        # Veriyi sayısal tipe güvenli dönüştür
+                        hal_df['siparis_miktari'] = pd.to_numeric(hal_df['siparis_miktari'], errors='coerce').fillna(0)
+                        hal_df = hal_df[hal_df['siparis_miktari'] > 0]
                         
                         if not hal_df.empty:
                             hal_df = hal_df.rename(columns={
@@ -341,9 +343,14 @@ else:
                 
                 kayitli_dict = {}
                 for r in res.data:
+                    try:
+                        sip_val = float(r['siparis_miktari']) if r['siparis_miktari'] is not None else 0.0
+                    except (ValueError, TypeError):
+                        sip_val = 0.0
+
                     kayitli_dict[r['urun_kodu']] = {
-                        'stok': str(r['mevcut_stok']),
-                        'siparis': float(r['siparis_miktari']) if r['siparis_miktari'] else 0.0
+                        'stok': str(r['mevcut_stok']) if r['mevcut_stok'] is not None else "0",
+                        'siparis': sip_val
                     }
 
                 df = pd.DataFrame(URUNLER)
@@ -364,14 +371,18 @@ else:
                         with col1:
                             stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
                             if not stok_dolu:
-                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_stok_str) if varsayilan_stok_str.replace('.','',1).isdigit() else 0.0, key=f"stok_{kod}")
+                                try:
+                                    def_val = float(varsayilan_stok_str)
+                                except ValueError:
+                                    def_val = 0.0
+                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=def_val, key=f"stok_{kod}")
                                 stok_kayit = str(int(stok_val))
                             else:
                                 stok_kayit = "Reyon Dolu"
                                 st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
 
                         with col2:
-                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=varsayilan_siparis, key=f"sip_{kod}")
+                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}")
                             
                         if (stok_kayit != "0" and stok_kayit != "0.0") or siparis > 0:
                             kaydedilecek_veriler.append({
@@ -595,7 +606,7 @@ else:
                         else:
                             try:
                                 num_sum += float(val_str)
-                            except:
+                            except ValueError:
                                 pass
                     res = []
                     if num_sum > 0:
