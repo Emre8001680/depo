@@ -1,4 +1,7 @@
-import io
+# Let's inspect or verify openpyxl script logic to generate the full Python code file if needed or directly write the python script to update app.py
+# Wait, the user wants the updated full code for Streamlit app with Excel page setup (orientation=LANDSCAPE, fitToWidth=1) and CSS print layout (@media print) integrated seamlessly.
+
+app_code = '''import io
 import base64
 from datetime import datetime, date
 import pandas as pd
@@ -30,7 +33,7 @@ except Exception as e:
 st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
 
 # -------------------------------------------------------------
-# 🎨 DİNAMİK TEMA UYUMLU CSS DÜZENLEMELERİ
+# 🎨 DİNAMİK TEMA VE YAZDIRMA (PRINT) CSS DÜZENLEMELERİ
 # -------------------------------------------------------------
 st.markdown("""
     <style>
@@ -41,8 +44,8 @@ st.markdown("""
         [data-testid="stSidebar"] {display: none !important;}
         
         .block-container {
-            padding-top: 2rem !important;
-            padding-bottom: 2rem !important;
+            padding-top: 1.5rem !important;
+            padding-bottom: 1.5rem !important;
         }
 
         @keyframes fadeInZoom {
@@ -85,6 +88,34 @@ st.markdown("""
             color: var(--text-color) !important;
             opacity: 0.75;
             margin-bottom: 25px;
+        }
+
+        /* 🖨️ YAZDIRMA (PRINT / ÇIKTI AL) AYARLARI */
+        @media print {
+            @page {
+                size: A4 landscape;
+                margin: 8mm;
+            }
+            body {
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+            }
+            .stButton, button, [data-testid="stHeader"], [data-testid="stSidebar"], .no-print {
+                display: none !important;
+            }
+            .block-container {
+                padding: 0 !important;
+                max-width: 100% !important;
+            }
+            table, [data-testid="stDataFrame"] {
+                width: 100% !important;
+                max-width: 100% !important;
+                font-size: 9pt !important;
+                page-break-inside: auto;
+            }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -167,13 +198,14 @@ if "admin_authed" not in st.session_state:
     st.session_state.admin_authed = False
 
 
-# TEK TEK ÜRÜN EXCEL ÇIKTISI
+# TEK TEK ÜRÜN EXCEL ÇIKTISI (YATAY A4 VE 1 SAYFA SIGDIRMA AYARLI)
 def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Hal_Dagitim_Listesi"
 
+    # 🖨️ A4 Yatay + 1 Sayfa Genişliğe Sığdır Ayarları
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -222,14 +254,14 @@ def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan):
     ws.cell(row=row_idx, column=1).border = border
     c_tot.border = border
 
-    ws.column_dimensions['A'].width = 25
-    ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['A'].width = 28
+    ws.column_dimensions['B'].width = 28
 
     wb.save(output)
     return output.getvalue()
 
 
-# 🚚 TOPLU HAL DAĞITIM EXCEL ÇIKTISI (SEVKİYATÇILAR İÇİN TEK DOSYA)
+# 🚚 TOPLU HAL DAĞITIM EXCEL ÇIKTISI (SEVKİYATÇILAR İÇİN TAM SIGDIRILMIŞ TEK DOSYA)
 def generate_toplu_hal_excel(bugun_str):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -237,6 +269,13 @@ def generate_toplu_hal_excel(bugun_str):
     # 1. Sayfa: Genel Şube - Ürün Matris Tablosu
     ws1 = wb.active
     ws1.title = "Sevkiyat_Matris_Tablosu"
+    
+    # 🖨️ A4 Yatay + 1 Sayfa Genişliğe Otomatik Sığdır
+    ws1.page_setup.orientation = ws1.ORIENTATION_LANDSCAPE
+    ws1.page_setup.paperSize = ws1.PAPERSIZE_A4
+    ws1.sheet_properties.pageSetUpPr.fitToPage = True
+    ws1.page_setup.fitToWidth = 1
+    ws1.page_setup.fitToHeight = 0
     
     res = supabase.table("siparisler").select("sube, urun_kodu, urun_adi, siparis_miktari").eq("tarih", bugun_str).execute()
     
@@ -259,7 +298,7 @@ def generate_toplu_hal_excel(bugun_str):
 
     ws1.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DAĞITIM MATRİSİ ({datetime.now().strftime('%d.%m.%Y')})").font = font_title
 
-    # Pivot Tablo Oluşturma (Satır: Ürünler, Sütun: Şubeler)
+    # Pivot Tablo
     pivot_hal = pd.pivot_table(
         df_hal, 
         values='siparis_miktari', 
@@ -270,7 +309,7 @@ def generate_toplu_hal_excel(bugun_str):
     )
     pivot_hal['TOPLAM SEVK'] = pivot_hal.sum(axis=1)
 
-    # Başlıkları Yaz
+    # Başlıklar
     ws1.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
     ws1.cell(row=3, column=2, value="Ürün Adı").font = font_bold
     ws1.cell(row=3, column=1).fill = header_fill
@@ -306,13 +345,19 @@ def generate_toplu_hal_excel(bugun_str):
             c_idx += 1
         row_idx += 1
 
-    ws1.column_dimensions['A'].width = 12
-    ws1.column_dimensions['B'].width = 25
+    ws1.column_dimensions['A'].width = 11
+    ws1.column_dimensions['B'].width = 23
     for c in range(3, col_idx):
-        ws1.column_dimensions[openpyxl.utils.get_column_letter(c)].width = 14
+        ws1.column_dimensions[openpyxl.utils.get_column_letter(c)].width = 12.5
 
     # 2. Sayfa: Detaylı Liste Sayfası
     ws2 = wb.create_sheet(title="Urun_Bazli_Liste")
+    ws2.page_setup.orientation = ws2.ORIENTATION_LANDSCAPE
+    ws2.page_setup.paperSize = ws2.PAPERSIZE_A4
+    ws2.sheet_properties.pageSetUpPr.fitToPage = True
+    ws2.page_setup.fitToWidth = 1
+    ws2.page_setup.fitToHeight = 0
+
     ws2.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - SEVKİYAT DETAY LİSTESİ ({datetime.now().strftime('%d.%m.%Y')})").font = font_title
 
     headers2 = ["Ürün Kodu", "Ürün Adı", "Şube Adı", "Verilecek Miktar (Kasa)"]
@@ -552,14 +597,14 @@ else:
             st.divider()
 
             # -----------------------------------------------------------------
-            # 🚚 SEVKİYATÇILAR İÇİN TOPLU EXCEL İNDİRME ALANI (YENİ EKLENDİ)
+            # 🚚 SEVKİYATÇILAR İÇİN TOPLU EXCEL İNDİRME ALANI (OTOMATİK YATAY A4 SIGDIRMALI)
             # -----------------------------------------------------------------
-            st.info("📦 **Sevkiyatçılar İçin Toplu Dağıtım Çıktısı:** Bugün halden girilen tüm ürünlerin ve şube dağıtımlarının olduğu tek Excel dosyasını buradan indirebilirsiniz.")
+            st.info("📦 **Sevkiyatçılar İçin Toplu Dağıtım Çıktısı:** Bugün halden girilen tüm ürünlerin ve şube dağıtımlarının olduğu, yazdırıldığında **A4 Yatay olarak 1 sayfaya tam sığan** Excel dosyasını indirebilirsiniz.")
             
             toplu_excel_bytes = generate_toplu_hal_excel(bugun_str)
             if toplu_excel_bytes:
                 st.download_button(
-                    label="🚚 BUGÜNÜN TÜM SEVKİYAT DAĞITIM LİSTESİNİ İNDİR (TOPLU EXCEL)",
+                    label="🚚 BUGÜNÜN TÜM SEVKİYAT DAĞITIM LİSTESİNİ İNDİR (A4 YATAY OTOMATİK SIĞDIRMALI EXCEL)",
                     data=toplu_excel_bytes,
                     file_name=f"Toplu_Hal_Sevkiyat_Listesi_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -768,6 +813,7 @@ else:
                     ws = wb.active
                     ws.title = "Siparis_Cizelgesi"
 
+                    # 🖨️ A4 Yatay + 1 Sayfa Genişliğe Otomatik Sığdır Ayarı
                     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
                     ws.page_setup.paperSize = ws.PAPERSIZE_A4
                     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -864,3 +910,9 @@ else:
                             supabase.table("siparisler").delete().neq("id", 0).execute()
                             st.success("✅ Veritabanındaki tüm siparişler tamamen sıfırlandı!")
                             st.rerun()
+'''
+
+with open("app.py", "w", encoding="utf-8") as f:
+    f.write(app_code)
+
+print("app.py updated successfully!")
