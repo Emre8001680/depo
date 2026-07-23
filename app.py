@@ -70,13 +70,13 @@ st.markdown("""
             display: block;
         }
 
-        /* METİN RENKLERİ (HEM KOYU HEM AÇIK TEMADA ÇALIŞIR) */
+        /* METİN RENKLERİ */
         .welcome-title {
             text-align: center;
             font-size: 26px;
             font-weight: 800;
             letter-spacing: 1px;
-            color: var(--text-color) !important; /* Dinamik sistem rengi */
+            color: var(--text-color) !important;
             margin-top: 15px;
             margin-bottom: 5px;
         }
@@ -84,12 +84,74 @@ st.markdown("""
         .welcome-sub {
             text-align: center;
             font-size: 15px;
-            color: var(--text-color) !important; /* Dinamik sistem rengi */
-            opacity: 0.75;                        /* Yumuşatılmış görünüm */
+            color: var(--text-color) !important;
+            opacity: 0.75;
             margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
+
+# Fixed Sabit Şube Listesi & Ürünler
+SUBE_LISTESI = [
+    "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadiri Yolu", 
+    "Nahır Yolu", "Eyup Sultan", "Bulvar", "Düziçi Çarşı", "Aşiyan", "Zeytinlik"
+]
+
+SUBE_SIFRELERI = {
+    "Raufbey": "1001", "Metin Tamer": "1002", "Hacı Osmanlı": "1003",
+    "Salı Yolu": "1004", "Kadiri Yolu": "1005", "Nahır Yolu": "1006",
+    "Eyup Sultan": "1007", "Bulvar": "1008", "Düziçi Çarşı": "1009",
+    "Aşiyan": "1010", "Zeytinlik": "1011"
+}
+
+HAL_SIFRESI = "2024"
+YONETICI_SIFRESI = "1234"
+
+URUNLER = [
+    {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
+    {"KODU": "00015264", "ADI": "MNV.ANANAS"}, {"KODU": "08385", "ADI": "MNV.ARMUT"},
+    {"KODU": "84", "ADI": "MNV.AVOKADO ADET"}, {"KODU": "058418", "ADI": "MNV.BAMYA"},
+    {"KODU": "09921", "ADI": "MNV.BARBUNYA"}, {"KODU": "055710", "ADI": "MNV.BEYAZ SOGAN"},
+    {"KODU": "01248", "ADI": "MNV.BEYAZ UZUM"}, {"KODU": "09965", "ADI": "MNV.BURSA DOMATES"},
+    {"KODU": "B.2901020", "ADI": "MNV.BURSA SEFTALI"}, {"KODU": "05695", "ADI": "MNV.CARLISTON BIBER"},
+    {"KODU": "09859", "ADI": "MNV.CEKIRDEKSIZ KARPUZ"}, {"KODU": "04239", "ADI": "MNV.CEKIRDEKSIZ UZUM"},
+    {"KODU": "09911", "ADI": "MNV.CERI DOMATES"}, {"KODU": "01127", "ADI": "MNV.CILEK"},
+    {"KODU": "00001922", "ADI": "MNV.DERE OTU"}, {"KODU": "09949", "ADI": "MNV.DEVECI ARMUT"},
+    {"KODU": "05485", "ADI": "MNV.DOLMALIK BIBER"}, {"KODU": "B.2801083", "ADI": "MNV.EJDER MEYVESI ADET"},
+    {"KODU": "07704", "ADI": "MNV.ELMA ARJANTIN"}, {"KODU": "07703", "ADI": "MNV.ELMA GOLDEN"},
+    {"KODU": "07701", "ADI": "MNV.ELMA STARKING"}, {"KODU": "09966", "ADI": "MNV.ERIK KG"},
+    {"KODU": "06108", "ADI": "MNV.FASULYE YESIL"}, {"KODU": "120", "ADI": "MNV.FIRIK MISIR"},
+    {"KODU": "81", "ADI": "MNV.GOBEKLI MARUL"}, {"KODU": "39", "ADI": "MNV.HINDISTAN CEVIZI"},
+    {"KODU": "09941", "ADI": "MNV.ISPANAK"}, {"KODU": "024179", "ADI": "MNV.ITALYAN ERIK"},
+    {"KODU": "053743", "ADI": "MNV.ITHAL MUZ"}, {"KODU": "01785", "ADI": "MNV.JALAPENO BIBER"},
+    {"KODU": "05773", "ADI": "MNV.KABAK BEYAZ"}, {"KODU": "06374", "ADI": "MNV.KABAK SIYAH"},
+    {"KODU": "07603", "ADI": "MNV.KARA LAHANA"}, {"KODU": "07451", "ADI": "MNV.KAVUN ANKARA"},
+    {"KODU": "B.2901023", "ADI": "MNV.KAVURMALIK SOGAN"}, {"KODU": "053054", "ADI": "MNV.KAYISI"},
+    {"KODU": "05790", "ADI": "MNV.KEMER PATLICAN"}, {"KODU": "09935", "ADI": "MNV.KIRAZ"},
+    {"KODU": "01151", "ADI": "MNV.KIRMIZI KAPYA BIBER"}, {"KODU": "056063", "ADI": "MNV.KIRMIZI PANCAR"},
+    {"KODU": "01153", "ADI": "MNV.KIRMIZI SILI BIBER"}, {"KODU": "06375", "ADI": "MNV.KIRMIZI SOGAN"},
+    {"KODU": "09398", "ADI": "MNV.KIVI"}, {"KODU": "76", "ADI": "MNV.KIVIRCIK MARUL"},
+    {"KODU": "B.2901017", "ADI": "MNV.KOZLEMELIK PATLICAN"}, {"KODU": "053197", "ADI": "MNV.KURU SARIMSAK"},
+    {"KODU": "09934", "ADI": "MNV.LIMON"}, {"KODU": "09997", "ADI": "MNV.LUX SALATALIK"},
+    {"KODU": "053056", "ADI": "MNV.MALATYA KAYISI"}, {"KODU": "051279", "ADI": "MNV.MANGO ADET"},
+    {"KODU": "8699211220011", "ADI": "MNV.MANTAR PAKET"}, {"KODU": "69", "ADI": "MNV.MARUL"},
+    {"KODU": "70", "ADI": "MNV.MAYDANOZ"}, {"KODU": "014146", "ADI": "MNV.MUZ"},
+    {"KODU": "54", "ADI": "MNV.NANE"}, {"KODU": "01302", "ADI": "MNV.NAR KIRMIZI"},
+    {"KODU": "052827", "ADI": "MNV.NEKTARI"}, {"KODU": "056065", "ADI": "MNV.PEMBE DOMATES"},
+    {"KODU": "B.2901021", "ADI": "MNV.RED GLOBE UZUM"}, {"KODU": "05983", "ADI": "MNV.REYHAN"},
+    {"KODU": "00012256", "ADI": "MNV.ROKA"}, {"KODU": "09915", "ADI": "MNV.SALKIM DOMATES"},
+    {"KODU": "09399", "ADI": "MNV.SANTA MARIA ARMUT"}, {"KODU": "07604", "ADI": "MNV.SARI HAVUC"},
+    {"KODU": "054069", "ADI": "MNV.SARI KAVUN"}, {"KODU": "053793", "ADI": "MNV.SEKERPARE"},
+    {"KODU": "98", "ADI": "MNV.SEMIZ OTU"}, {"KODU": "B.2901018", "ADI": "MNV.SIVRI BIBER"},
+    {"KODU": "MNV.017485", "ADI": "MNV.SIYAH UZUM"}, {"KODU": "017185", "ADI": "MNV.SUS BIBERI"},
+    {"KODU": "2901098", "ADI": "MNV.TATLI  PATATES"}, {"KODU": "2901117", "ADI": "MNV.TAZE PATATES"},
+    {"KODU": "015575", "ADI": "MNV.TOPAK PATLICAN"}, {"KODU": "08384", "ADI": "MNV.YABAN MERSINI PAKET"},
+    {"KODU": "05694", "ADI": "MNV.YAYLA DOMATES"}, {"KODU": "2909808", "ADI": "MNV.YAYLA ELMASI"},
+    {"KODU": "05700", "ADI": "MNV.YENI DUNYA"}, {"KODU": "09913", "ADI": "MNV.YERLI DOMATES"},
+    {"KODU": "052128", "ADI": "MNV.YERLI SALATALIK"}, {"KODU": "016870", "ADI": "MNV.YESIL KAPYA BIBER"},
+    {"KODU": "053742", "ADI": "MNV.YESIL SILI BIBER"}, {"KODU": "13", "ADI": "MNV.YESIL SOGAN"},
+    {"KODU": "051277", "ADI": "MNV.ZENCEFIL"}
+]
 
 # Session State
 if "site_giris_yapildi" not in st.session_state:
@@ -100,6 +162,9 @@ if "aktif_rol" not in st.session_state:
 
 if "giris_yapilan_sube" not in st.session_state:
     st.session_state.giris_yapilan_sube = None
+
+if "hal_authed" not in st.session_state:
+    st.session_state.hal_authed = False
 
 # KARŞILAMA EKRANI
 if not st.session_state.site_giris_yapildi:
@@ -127,29 +192,25 @@ if not st.session_state.site_giris_yapildi:
             st.rerun()
 
 else:
-    YONETICI_SIFRESI = "1234"
-
-    SUBE_SIFRELERI = {
-        "Raufbey": "1001", "Metin Tamer": "1002", "Hacı Osmanlı": "1003",
-        "Salı Yolu": "1004", "Kadiri Yolu": "1005", "Nahır Yolu": "1006",
-        "Eyup Sultan": "1007", "Bulvar": "1008", "Düziçi Çarşı": "1009",
-        "Aşiyan": "1010", "Zeytinlik": "1011"
-    }
-
     st.markdown("### 📌 Sayfa Geçişi")
-    m_col1, m_col2, m_col3 = st.columns([1, 1, 1])
+    m_col1, m_col2, m_col3, m_col4 = st.columns([1, 1, 1, 0.8])
     
     with m_col1:
         if st.button("🏬 Şube Girişi", type="primary" if st.session_state.aktif_rol == "🏬 Şube Sipariş Girişi" else "secondary", use_container_width=True):
             st.session_state.aktif_rol = "🏬 Şube Sipariş Girişi"
             st.rerun()
-            
+
     with m_col2:
+        if st.button("🚛 Hal Dağıtım Paneli", type="primary" if st.session_state.aktif_rol == "🚛 Hal Dağıtım Paneli" else "secondary", use_container_width=True):
+            st.session_state.aktif_rol = "🚛 Hal Dağıtım Paneli"
+            st.rerun()
+            
+    with m_col3:
         if st.button("👑 Merkez Panel", type="primary" if st.session_state.aktif_rol == "👑 Merkez Yönetim Paneli" else "secondary", use_container_width=True):
             st.session_state.aktif_rol = "👑 Merkez Yönetim Paneli"
             st.rerun()
 
-    with m_col3:
+    with m_col4:
         if st.button("🚪 Çıkış", use_container_width=True):
             st.session_state.site_giris_yapildi = False
             st.session_state.giris_yapilan_sube = None
@@ -166,7 +227,7 @@ else:
         bugun_str = datetime.now().strftime('%Y-%m-%d')
         st.caption(f"Tarih: {datetime.now().strftime('%d.%m.%Y')}")
 
-        subeler = ["-- Seçiniz --"] + list(SUBE_SIFRELERI.keys())
+        subeler = ["-- Seçiniz --"] + SUBE_LISTESI
         secilen_sube = st.selectbox("📍 **Lütfen Şubenizi Seçin:**", subeler)
 
         if secilen_sube != "-- Seçiniz --":
@@ -201,55 +262,7 @@ else:
                         'siparis': float(r['siparis_miktari']) if r['siparis_miktari'] else 0.0
                     }
 
-                urunler = [
-                    {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
-                    {"KODU": "00015264", "ADI": "MNV.ANANAS"}, {"KODU": "08385", "ADI": "MNV.ARMUT"},
-                    {"KODU": "84", "ADI": "MNV.AVOKADO ADET"}, {"KODU": "058418", "ADI": "MNV.BAMYA"},
-                    {"KODU": "09921", "ADI": "MNV.BARBUNYA"}, {"KODU": "055710", "ADI": "MNV.BEYAZ SOGAN"},
-                    {"KODU": "01248", "ADI": "MNV.BEYAZ UZUM"}, {"KODU": "09965", "ADI": "MNV.BURSA DOMATES"},
-                    {"KODU": "B.2901020", "ADI": "MNV.BURSA SEFTALI"}, {"KODU": "05695", "ADI": "MNV.CARLISTON BIBER"},
-                    {"KODU": "09859", "ADI": "MNV.CEKIRDEKSIZ KARPUZ"}, {"KODU": "04239", "ADI": "MNV.CEKIRDEKSIZ UZUM"},
-                    {"KODU": "09911", "ADI": "MNV.CERI DOMATES"}, {"KODU": "01127", "ADI": "MNV.CILEK"},
-                    {"KODU": "00001922", "ADI": "MNV.DERE OTU"}, {"KODU": "09949", "ADI": "MNV.DEVECI ARMUT"},
-                    {"KODU": "05485", "ADI": "MNV.DOLMALIK BIBER"}, {"KODU": "B.2801083", "ADI": "MNV.EJDER MEYVESI ADET"},
-                    {"KODU": "07704", "ADI": "MNV.ELMA ARJANTIN"}, {"KODU": "07703", "ADI": "MNV.ELMA GOLDEN"},
-                    {"KODU": "07701", "ADI": "MNV.ELMA STARKING"}, {"KODU": "09966", "ADI": "MNV.ERIK KG"},
-                    {"KODU": "06108", "ADI": "MNV.FASULYE YESIL"}, {"KODU": "120", "ADI": "MNV.FIRIK MISIR"},
-                    {"KODU": "81", "ADI": "MNV.GOBEKLI MARUL"}, {"KODU": "39", "ADI": "MNV.HINDISTAN CEVIZI"},
-                    {"KODU": "09941", "ADI": "MNV.ISPANAK"}, {"KODU": "024179", "ADI": "MNV.ITALYAN ERIK"},
-                    {"KODU": "053743", "ADI": "MNV.ITHAL MUZ"}, {"KODU": "01785", "ADI": "MNV.JALAPENO BIBER"},
-                    {"KODU": "05773", "ADI": "MNV.KABAK BEYAZ"}, {"KODU": "06374", "ADI": "MNV.KABAK SIYAH"},
-                    {"KODU": "07603", "ADI": "MNV.KARA LAHANA"}, {"KODU": "07451", "ADI": "MNV.KAVUN ANKARA"},
-                    {"KODU": "B.2901023", "ADI": "MNV.KAVURMALIK SOGAN"}, {"KODU": "053054", "ADI": "MNV.KAYISI"},
-                    {"KODU": "05790", "ADI": "MNV.KEMER PATLICAN"}, {"KODU": "09935", "ADI": "MNV.KIRAZ"},
-                    {"KODU": "01151", "ADI": "MNV.KIRMIZI KAPYA BIBER"}, {"KODU": "056063", "ADI": "MNV.KIRMIZI PANCAR"},
-                    {"KODU": "01153", "ADI": "MNV.KIRMIZI SILI BIBER"}, {"KODU": "06375", "ADI": "MNV.KIRMIZI SOGAN"},
-                    {"KODU": "09398", "ADI": "MNV.KIVI"}, {"KODU": "76", "ADI": "MNV.KIVIRCIK MARUL"},
-                    {"KODU": "B.2901017", "ADI": "MNV.KOZLEMELIK PATLICAN"}, {"KODU": "053197", "ADI": "MNV.KURU SARIMSAK"},
-                    {"KODU": "09934", "ADI": "MNV.LIMON"}, {"KODU": "09997", "ADI": "MNV.LUX SALATALIK"},
-                    {"KODU": "053056", "ADI": "MNV.MALATYA KAYISI"}, {"KODU": "051279", "ADI": "MNV.MANGO ADET"},
-                    {"KODU": "8699211220011", "ADI": "MNV.MANTAR PAKET"}, {"KODU": "69", "ADI": "MNV.MARUL"},
-                    {"KODU": "70", "ADI": "MNV.MAYDANOZ"}, {"KODU": "014146", "ADI": "MNV.MUZ"},
-                    {"KODU": "54", "ADI": "MNV.NANE"}, {"KODU": "01302", "ADI": "MNV.NAR KIRMIZI"},
-                    {"KODU": "052827", "ADI": "MNV.NEKTARI"}, {"KODU": "056065", "ADI": "MNV.PEMBE DOMATES"},
-                    {"KODU": "B.2901021", "ADI": "MNV.RED GLOBE UZUM"}, {"KODU": "05983", "ADI": "MNV.REYHAN"},
-                    {"KODU": "00012256", "ADI": "MNV.ROKA"}, {"KODU": "09915", "ADI": "MNV.SALKIM DOMATES"},
-                    {"KODU": "09399", "ADI": "MNV.SANTA MARIA ARMUT"}, {"KODU": "07604", "ADI": "MNV.SARI HAVUC"},
-                    {"KODU": "054069", "ADI": "MNV.SARI KAVUN"}, {"KODU": "053793", "ADI": "MNV.SEKERPARE"},
-                    {"KODU": "98", "ADI": "MNV.SEMIZ OTU"}, {"KODU": "B.2901018", "ADI": "MNV.SIVRI BIBER"},
-                    {"KODU": "MNV.017485", "ADI": "MNV.SIYAH UZUM"}, {"KODU": "017185", "ADI": "MNV.SUS BIBERI"},
-                    {"KODU": "2901098", "ADI": "MNV.TATLI  PATATES"}, {"KODU": "2901117", "ADI": "MNV.TAZE PATATES"},
-                    {"KODU": "015575", "ADI": "MNV.TOPAK PATLICAN"}, {"KODU": "08384", "ADI": "MNV.YABAN MERSINI PAKET"},
-                    {"KODU": "05694", "ADI": "MNV.YAYLA DOMATES"}, {"KODU": "2909808", "ADI": "MNV.YAYLA ELMASI"},
-                    {"KODU": "05700", "ADI": "MNV.YENI DUNYA"}, {"KODU": "09913", "ADI": "MNV.YERLI DOMATES"},
-                    {"KODU": "052128", "ADI": "MNV.YERLI SALATALIK"}, {"KODU": "016870", "ADI": "MNV.YESIL KAPYA BIBER"},
-                    {"KODU": "053742", "ADI": "MNV.YESIL SILI BIBER"}, {"KODU": "13", "ADI": "MNV.YESIL SOGAN"},
-                    {"KODU": "051277", "ADI": "MNV.ZENCEFIL"}
-                ]
-
-                df = pd.DataFrame(urunler)
-                st.divider()
-
+                df = pd.DataFrame(URUNLER)
                 arama = st.text_input("🔍 **Ürün Ara (Adı veya Kodu):**", "")
                 filtre_df = df[df['ADI'].str.contains(arama, case=False) | df['KODU'].str.contains(arama, case=False)] if arama else df
 
@@ -306,7 +319,92 @@ else:
                         st.error("🗑️ Bugünkü siparişiniz tamamen silindi!")
                         st.rerun()
 
-    # 2. MERKEZ YÖNETİM PANELİ
+    # 2. HAL DAĞITIM PANELİ (YENİ MODÜL - 1. YAKLAŞIM)
+    elif rol == "🚛 Hal Dağıtım Paneli":
+        st.markdown("<h2 style='text-align: center;'>🚛 Hal Satınalma ve Dağıtım Paneli</h2>", unsafe_allow_html=True)
+        bugun_str = datetime.now().strftime('%Y-%m-%d')
+
+        if not st.session_state.hal_authed:
+            hal_pin = st.text_input("🔑 Lütfen Satınalma/Hal Yetkili Şifresini Giriniz:", type="password")
+            if st.button("Giriş Yap", type="primary"):
+                if hal_pin == HAL_SIFRESI or hal_pin == YONETICI_SIFRESI:
+                    st.session_state.hal_authed = True
+                    st.rerun()
+                else:
+                    st.error("❌ Hatalı Satınalma Şifresi! (Varsayılan: 2024)")
+        else:
+            st.success("🔓 Satınalma Yetkili Girişi Aktif")
+            if st.button("🔒 Oturumu Kapat"):
+                st.session_state.hal_authed = False
+                st.rerun()
+
+            st.divider()
+
+            urun_listesi_adlar = [f"{u['ADI']} ({u['KODU']})" for u in URUNLER]
+            secilen_urun_combo = st.selectbox("🛒 **Halden Alınan Ürünü Seçin:**", urun_listesi_adlar)
+            
+            secilen_urun_kod = secilen_urun_combo.split("(")[-1].replace(")", "").strip()
+            secilen_urun_ad = secilen_urun_combo.split("(")[0].strip()
+
+            hal_toplam_kasa = st.number_input(f"📦 **Halden Alınan Toplam Miktar ({secilen_urun_ad}):**", min_value=0.0, step=1.0, value=0.0)
+
+            st.subheader("🏬 Şubelere Dağıtım Tablosu")
+            st.caption("Lütfen halden yükleme yapılan şubelere verilen kasa miktarlarını girin:")
+
+            dagitim_dict = {}
+            toplam_dagitilan = 0.0
+
+            # Şubeleri 2 kolon halinde göster
+            d_col1, d_col2 = st.columns(2)
+            
+            for i, sube_adi in enumerate(SUBE_LISTESI):
+                target_col = d_col1 if i % 2 == 0 else d_col2
+                with target_col:
+                    val = st.number_input(f"📍 {sube_adi}:", min_value=0.0, step=1.0, value=0.0, key=f"hal_dag_{sube_adi}_{secilen_urun_kod}")
+                    dagitim_dict[sube_adi] = val
+                    toplam_dagitilan += val
+
+            kalan_kasa = hal_toplam_kasa - toplam_dagitilan
+
+            st.divider()
+            
+            # Anlık Kasa Metrikleri
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Halden Alınan", f"{hal_toplam_kasa:.0f} Kasa")
+            m2.metric("Şubelere Dağıtılan", f"{toplam_dagitilan:.0f} Kasa")
+            
+            if kalan_kasa < 0:
+                m3.metric("⚠️ Fazla Dağıtılan", f"{abs(kalan_kasa):.0f} Kasa", delta_color="inverse")
+                st.error("⚠️ Halden aldığınız miktardan daha fazla dağıtım yaptınız! Lütfen değerleri kontrol edin.")
+            else:
+                m3.metric("Kalan (Depo/Yedek)", f"{kalan_kasa:.0f} Kasa")
+
+            if st.button("💾 Hal Dağıtımını Kaydet ve Şubelere Bildir", type="primary", use_container_width=True):
+                if hal_toplam_kasa == 0:
+                    st.warning("⚠️ Halden alınan miktar 0 olamaz.")
+                elif kalan_kasa < 0:
+                    st.error("❌ Hata: Alınan miktardan fazlası dağıtılamaz!")
+                else:
+                    # Dağıtılan verileri Supabase'e şubelerin sipariş kaydı olarak veya hal dağıtımı olarak kaydet
+                    kayit_listesi = []
+                    for sube, miktar in dagitim_dict.items():
+                        if miktar > 0:
+                            kayit_listesi.append({
+                                "sube": sube,
+                                "tarih": bugun_str,
+                                "urun_kodu": secilen_urun_kod,
+                                "urun_adi": secilen_urun_ad,
+                                "mevcut_stok": "0",
+                                "siparis_miktari": float(miktar)
+                            })
+                    
+                    if len(kayit_listesi) > 0:
+                        supabase.table("siparisler").insert(kayit_listesi).execute()
+                        st.success(f"✅ **{secilen_urun_ad}** dağıtımı başarıyla kaydedildi!")
+                    else:
+                        st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
+
+    # 3. MERKEZ YÖNETİM PANELİ
     elif rol == "👑 Merkez Yönetim Paneli":
         st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
 
@@ -350,7 +448,7 @@ else:
             df_siparisler = pd.DataFrame(res.data)
 
             if df_siparisler.empty:
-                st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) kayıtlı sipariş bulunmamaktadır.")
+                st.warning(f"ℹ️ Seçilen tarihte ({tarih_etiket}) kayıtlı sipariş veya dağıtım bulunmamaktadır.")
             else:
                 df_siparisler = df_siparisler.rename(columns={
                     'sube': 'Şube',
@@ -374,7 +472,7 @@ else:
                 col1.metric("Toplam Kalem", len(filtreli_df))
                 col2.metric("Sipariş Veren Şube", filtreli_df['Şube'].nunique())
                 toplam_sip_miktari = filtreli_df['Sipariş Miktarı'].sum()
-                col3.metric("Toplam Sipariş", f"{toplam_sip_miktari:,.0f} Kasa")
+                col3.metric("Toplam Miktar", f"{toplam_sip_miktari:,.0f} Kasa")
 
                 st.divider()
 
