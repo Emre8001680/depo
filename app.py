@@ -1,8 +1,9 @@
+
 import io
 import base64
 import hashlib
 import json
-from datetime import datetime, date, time
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
@@ -110,11 +111,8 @@ SUBE_SIFRELERI = {
 HAL_SIFRESI = st.secrets.get("HAL_PASSWORD", "2024")
 YONETICI_SIFRESI = st.secrets.get("ADMIN_PASSWORD", "1234")
 
-# Türkiye saati ve şube sipariş kapanış zamanı.
-# Streamlit secrets üzerinden ORDER_CUTOFF_HOUR / ORDER_CUTOFF_MINUTE ile değiştirilebilir.
+# Türkiye saati.
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
-SIPARIS_KAPANIS_SAATI = int(st.secrets.get("ORDER_CUTOFF_HOUR", 11))
-SIPARIS_KAPANIS_DAKIKASI = int(st.secrets.get("ORDER_CUTOFF_MINUTE", 0))
 
 URUNLER = [
     {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
@@ -179,18 +177,29 @@ def simdi_tr():
     return datetime.now(ISTANBUL_TZ)
 
 
-def siparis_girisi_acik_mi():
-    """Şube sipariş girişinin bugün için açık olup olmadığını döndürür."""
-    simdi = simdi_tr()
-    kapanis = datetime.combine(simdi.date(), time(SIPARIS_KAPANIS_SAATI, SIPARIS_KAPANIS_DAKIKASI), tzinfo=ISTANBUL_TZ)
-    return simdi <= kapanis, kapanis
-
 
 def kayit_ozeti(kayitlar):
-    """Kayıt listesini kararlı biçimde özetleyerek eşzamanlı değişiklik kontrolü sağlar."""
+    """Kayıtları veri tipi farklarından etkilenmeden karşılaştırmak için kararlı biçimde özetler."""
+    sayisal_alanlar = {"dağıtılan_miktar", "siparis_miktari"}
+    metin_alanlari = {"sube", "tarih", "urun_kodu", "urun_adi", "mevcut_stok"}
+
     normalize = []
     for kayit in kayitlar or []:
-        normalize.append({k: kayit.get(k) for k in sorted(kayit.keys())})
+        temiz = {}
+        for alan in sorted(kayit.keys()):
+            deger = kayit.get(alan)
+            if alan in sayisal_alanlar:
+                try:
+                    # Supabase 1, 1.0 veya "1.00" döndürse de aynı kabul edilir.
+                    temiz[alan] = f"{float(deger or 0):.6f}"
+                except (TypeError, ValueError):
+                    temiz[alan] = "0.000000"
+            elif alan in metin_alanlari:
+                temiz[alan] = "" if deger is None else str(deger).strip()
+            else:
+                temiz[alan] = deger
+        normalize.append(temiz)
+
     normalize.sort(key=lambda x: json.dumps(x, ensure_ascii=False, sort_keys=True, default=str))
     payload = json.dumps(normalize, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -205,13 +214,34 @@ def baglanti_kontrolu():
         return False
 
 
+def hal_taslagini_guncelle(tarih, urun_kodu):
+    """Hal panelindeki alanları ürünler arasında geçişte kaybolmaması için kalıcı oturum taslağına aktarır."""
+    taslaklar = st.session_state.setdefault("hal_taslaklari", {})
+    taslak_anahtari = f"{tarih}|{urun_kodu}"
+    toplam_key = f"hal_toplam_{tarih}_{urun_kodu}"
+    dagitim = {}
+    for sube in SUBE_LISTESI:
+        widget_key = f"hal_dag_{tarih}_{sube}_{urun_kodu}"
+        dagitim[sube] = float(st.session_state.get(widget_key, 0.0) or 0.0)
+    taslaklar[taslak_anahtari] = {
+        "hal_toplam": float(st.session_state.get(toplam_key, 0.0) or 0.0),
+        "dagitim": dagitim,
+    }
+
+
 def guvenli_sorgu(islem_adi, fn):
     """Supabase işlemlerini kullanıcı dostu hata yönetimiyle çalıştırır."""
     try:
         return fn()
-    except Exception as exc:
-        st.error(f"❌ {islem_adi} sırasında bir hata oluştu. Veri bağlantınızı kontrol edip tekrar deneyin.")
-        st.exception(exc)
+    except RuntimeError as exc:
+        mesaj = str(exc)
+        if mesaj.startswith("ÇAKIŞMA:"):
+            st.warning(f"⚠️ {mesaj.replace('ÇAKIŞMA:', '').strip()}")
+        else:
+            st.error(f"❌ {islem_adi} sırasında bir hata oluştu: {mesaj}")
+        return None
+    except Exception:
+        st.error(f"❌ {islem_adi} sırasında bir hata oluştu. İnternet bağlantınızı kontrol edip tekrar deneyin.")
         return None
 
 
@@ -562,7 +592,6 @@ else:
         st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
         bugun_str = simdi_tr().strftime('%Y-%m-%d')
         st.caption(f"Tarih: {simdi_tr().strftime('%d.%m.%Y')}")
-        siparis_acik, kapanis_zamani = siparis_girisi_acik_mi()
 
         subeler = ["-- Seçiniz --"] + SUBE_LISTESI
         secilen_sube = st.selectbox("📍 **Lütfen Şubenizi Seçin:**", subeler)
@@ -584,10 +613,6 @@ else:
                             st.error("❌ Hatalı Şube Şifresi!")
             else:
                 st.success(f"🔓 **{secilen_sube}** Şubesi Girişi Aktif")
-                if siparis_acik:
-                    st.info(f"⏰ Bugünkü sipariş girişi {kapanis_zamani.strftime('%H:%M')} saatine kadar açıktır.")
-                else:
-                    st.error(f"⛔ Bugünkü sipariş girişi {kapanis_zamani.strftime('%H:%M')} itibarıyla kapanmıştır. Mevcut kayıtlar görüntülenebilir ancak değiştirilemez.")
                 if st.button("🔒 Şube Oturumunu Kapat", type="secondary"):
                     st.session_state.giris_yapilan_sube = None
                     st.rerun()
@@ -640,20 +665,20 @@ else:
                     with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
                         col1, col2 = st.columns([1.5, 1])
                         with col1:
-                            stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}", disabled=not siparis_acik)
+                            stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
                             if not stok_dolu:
                                 try:
                                     def_val = float(varsayilan_stok_str)
                                 except ValueError:
                                     def_val = 0.0
-                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=def_val, key=f"stok_{kod}", disabled=not siparis_acik)
+                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=def_val, key=f"stok_{kod}")
                                 stok_kayit = str(int(stok_val))
                             else:
                                 stok_kayit = "Reyon Dolu"
                                 st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
 
                         with col2:
-                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}", disabled=not siparis_acik)
+                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}")
                             
                         if stok_kayit != "0" or siparis > 0:
                             kaydedilecek_veriler.append({
@@ -668,7 +693,7 @@ else:
                 st.divider()
                 btn_col1, btn_col2 = st.columns([2, 1])
                 with btn_col1:
-                    if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True, disabled=not siparis_acik):
+                    if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
                         with st.spinner("Sipariş güvenli şekilde kaydediliyor..."):
                             sonuc = guvenli_sorgu(
                                 "Sipariş kaydetme",
@@ -684,7 +709,7 @@ else:
                             st.rerun()
                 with btn_col2:
                     iptal_onayi = st.checkbox("Sipariş iptalini onaylıyorum", key=f"iptal_onay_{secilen_sube}")
-                    if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=(not iptal_onayi) or (not siparis_acik)):
+                    if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=not iptal_onayi):
                         sonuc = guvenli_sorgu(
                             "Sipariş iptali",
                             lambda: supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
@@ -750,10 +775,87 @@ else:
 
             hal_mevcut = supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
             hal_snapshot_key = f"hal_snapshot_{hal_tarih_str}_{secilen_urun_kod}"
-            if hal_snapshot_key not in st.session_state:
-                st.session_state[hal_snapshot_key] = kayit_ozeti(hal_mevcut)
+            st.session_state[hal_snapshot_key] = kayit_ozeti(hal_mevcut)
 
-            hal_toplam_kasa = st.number_input(f"📦 **Halden Alınan Toplam Miktar ({secilen_urun_ad}):**", min_value=0.0, step=1.0, value=0.0)
+            # Hal dağıtım alanları ürün ve tarih bazında ayrı taslaklarda tutulur.
+            # Ürün değiştirilmeden hemen önce mevcut widget değerleri taslağa alınır;
+            # geri dönüldüğünde yeni widget anahtarlarıyla bu değerler tekrar yüklenir.
+            hal_taslaklari = st.session_state.setdefault("hal_taslaklari", {})
+            hal_taslak_key = f"{hal_tarih_str}|{secilen_urun_kod}"
+            yeni_baglam = hal_taslak_key
+            onceki_baglam = st.session_state.get("hal_widget_baglam")
+            onceki_anahtarlar = st.session_state.get("hal_widget_anahtarlar", {})
+
+            # Önceki üründe girilmiş ama henüz kaydedilmemiş değerleri kaybetme.
+            if onceki_baglam and onceki_anahtarlar:
+                onceki_dagitim = {}
+                for sube_adi in SUBE_LISTESI:
+                    eski_key = onceki_anahtarlar.get("dagitim", {}).get(sube_adi)
+                    onceki_dagitim[sube_adi] = float(st.session_state.get(eski_key, 0.0) or 0.0) if eski_key else 0.0
+                eski_toplam_key = onceki_anahtarlar.get("toplam")
+                hal_taslaklari[onceki_baglam] = {
+                    "hal_toplam": float(st.session_state.get(eski_toplam_key, 0.0) or 0.0) if eski_toplam_key else 0.0,
+                    "dagitim": onceki_dagitim,
+                }
+
+            kayitli_dagitim = {sube: 0.0 for sube in SUBE_LISTESI}
+            for kayit in hal_mevcut:
+                sube = kayit.get("sube")
+                if sube in kayitli_dagitim:
+                    try:
+                        kayitli_dagitim[sube] = float(kayit.get("dağıtılan_miktar") or 0.0)
+                    except (TypeError, ValueError):
+                        kayitli_dagitim[sube] = 0.0
+
+            kayitli_toplam = float(sum(kayitli_dagitim.values()))
+            if hal_taslak_key not in hal_taslaklari:
+                hal_taslaklari[hal_taslak_key] = {
+                    "hal_toplam": kayitli_toplam,
+                    "dagitim": kayitli_dagitim.copy(),
+                }
+            elif hal_mevcut:
+                # Veritabanında kayıt varsa dağıtım değerlerini esas al; gerçek toplam alış
+                # miktarı oturum taslağında daha yüksekse onu koru.
+                mevcut_taslak = hal_taslaklari[hal_taslak_key]
+                taslak_toplam = float(mevcut_taslak.get("hal_toplam", 0.0) or 0.0)
+                hal_taslaklari[hal_taslak_key] = {
+                    "hal_toplam": max(taslak_toplam, kayitli_toplam),
+                    "dagitim": kayitli_dagitim.copy(),
+                }
+
+            # Her ürün/tarih geçişinde yeni widget anahtarları üretmek, Streamlit'in
+            # önceki sıfır değerlerini kayıtlı verilerin üzerine yazmasını engeller.
+            if onceki_baglam != yeni_baglam:
+                st.session_state["hal_widget_surum"] = int(st.session_state.get("hal_widget_surum", 0)) + 1
+            widget_surum = int(st.session_state.get("hal_widget_surum", 1))
+            aktif_hal_taslagi = hal_taslaklari[hal_taslak_key]
+
+            hal_toplam_widget_key = f"hal_toplam_{hal_tarih_str}_{secilen_urun_kod}_{widget_surum}"
+            dagitim_widget_keys = {
+                sube_adi: f"hal_dag_{hal_tarih_str}_{sube_adi}_{secilen_urun_kod}_{widget_surum}"
+                for sube_adi in SUBE_LISTESI
+            }
+
+            if hal_toplam_widget_key not in st.session_state:
+                st.session_state[hal_toplam_widget_key] = float(aktif_hal_taslagi.get("hal_toplam", 0.0) or 0.0)
+            for sube_adi, widget_key in dagitim_widget_keys.items():
+                if widget_key not in st.session_state:
+                    st.session_state[widget_key] = float(
+                        aktif_hal_taslagi.get("dagitim", {}).get(sube_adi, 0.0) or 0.0
+                    )
+
+            st.session_state["hal_widget_baglam"] = yeni_baglam
+            st.session_state["hal_widget_anahtarlar"] = {
+                "toplam": hal_toplam_widget_key,
+                "dagitim": dagitim_widget_keys,
+            }
+
+            hal_toplam_kasa = st.number_input(
+                f"📦 **Halden Alınan Toplam Miktar ({secilen_urun_ad}):**",
+                min_value=0.0,
+                step=1.0,
+                key=hal_toplam_widget_key,
+            )
 
             st.subheader("🏬 Şubelere Dağıtım Tablosu")
             dagitim_dict = {}
@@ -761,10 +863,22 @@ else:
             d_col1, d_col2 = st.columns(2)
             for i, sube_adi in enumerate(SUBE_LISTESI):
                 target_col = d_col1 if i % 2 == 0 else d_col2
+                widget_key = dagitim_widget_keys[sube_adi]
                 with target_col:
-                    val = st.number_input(f"📍 {sube_adi}:", min_value=0.0, step=1.0, value=0.0, key=f"hal_dag_{sube_adi}_{secilen_urun_kod}")
-                    dagitim_dict[sube_adi] = val
-                    toplam_dagitilan += val
+                    val = st.number_input(
+                        f"📍 {sube_adi}:",
+                        min_value=0.0,
+                        step=1.0,
+                        key=widget_key,
+                    )
+                    dagitim_dict[sube_adi] = float(val)
+                    toplam_dagitilan += float(val)
+
+            # Her yeniden çalıştırmada güncel alanları taslağa aktar.
+            hal_taslaklari[hal_taslak_key] = {
+                "hal_toplam": float(hal_toplam_kasa),
+                "dagitim": {sube: float(miktar) for sube, miktar in dagitim_dict.items()},
+            }
 
             kalan_kasa = hal_toplam_kasa - toplam_dagitilan
             st.divider()
@@ -804,7 +918,15 @@ else:
                                 )
                             if sonuc:
                                 st.success(f"✅ **{secilen_urun_ad}** dağıtımı kaydedildi/güncellendi!")
-                                st.session_state[hal_snapshot_key] = kayit_ozeti(kayit_listesi)
+                                guncel_hal = supabase.table("hal_dagitim").select(
+                                    "sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar"
+                                ).eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
+                                st.session_state[hal_snapshot_key] = kayit_ozeti(guncel_hal)
+                                # Başarılı kayıttan sonra taslağı doğrudan kaydedilen değerlerle güncelle.
+                                hal_taslaklari[hal_taslak_key] = {
+                                    "hal_toplam": float(hal_toplam_kasa),
+                                    "dagitim": {sube: float(miktar) for sube, miktar in dagitim_dict.items()},
+                                }
                                 st.rerun()
                         else:
                             st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
