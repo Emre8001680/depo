@@ -1,4 +1,3 @@
-# SÜRÜM: 25.07.2026-R3-ARAMA-KORUMALI
 import io
 import base64
 import hashlib
@@ -650,85 +649,74 @@ else:
                         'siparis': sip_val
                     }
 
-                df = pd.DataFrame(URUNLER)
-                arama = st.text_input("🔍 **Ürün Ara (Adı veya Kodu):**", "")
-                filtre_df = df[df['ADI'].str.contains(arama, case=False) | df['KODU'].str.contains(arama, case=False)] if arama else df
-
-                # Kayıt listesi yalnızca arama sonucunda görünen ürünlerden oluşturulursa,
-                # görünmeyen mevcut siparişler yanlışlıkla silinir. Bu nedenle önce
-                # veritabanındaki tüm kayıtları temel alıyor, sonra ekrandaki/taslaktaki
-                # değişiklikleri ürün koduna göre üzerine yazıyoruz.
-                kaydedilecek_dict = {}
-                urun_adi_dict = {u["KODU"]: u["ADI"] for u in URUNLER}
-                widget_prefix = f"siparis_{secilen_sube}_{bugun_str}"
-
-                for kod, degerler in kayitli_dict.items():
-                    stok_kayit = degerler.get("stok", "0")
-                    siparis_miktari = float(degerler.get("siparis", 0.0) or 0.0)
-                    if stok_kayit != "0" or siparis_miktari > 0:
-                        kaydedilecek_dict[kod] = {
-                            "sube": secilen_sube,
-                            "tarih": bugun_str,
-                            "urun_kodu": kod,
-                            "urun_adi": urun_adi_dict.get(kod, ""),
-                            "mevcut_stok": stok_kayit,
-                            "siparis_miktari": siparis_miktari
+                # Şube+tarih bazlı tam sipariş taslağı. Arama yalnızca görünümü filtreler;
+                # kaydetme işlemi her zaman tüm ürünlerin taslağını kullanır.
+                siparis_taslak_key = f"siparis_taslak_{secilen_sube}_{bugun_str}"
+                if siparis_taslak_key not in st.session_state:
+                    st.session_state[siparis_taslak_key] = {
+                        u["KODU"]: {
+                            "urun_adi": u["ADI"],
+                            "stok": kayitli_dict.get(u["KODU"], {}).get("stok", "0"),
+                            "siparis": float(kayitli_dict.get(u["KODU"], {}).get("siparis", 0.0)),
                         }
+                        for u in URUNLER
+                    }
 
-                # Daha önce ekranda değiştirilmiş fakat henüz kaydedilmemiş ürünleri de
-                # arama filtresi değişse bile taslaktan koru.
-                for urun in URUNLER:
-                    kod = urun["KODU"]
-                    dolu_key = f"{widget_prefix}_dolu_{kod}"
-                    stok_key = f"{widget_prefix}_stok_{kod}"
-                    sip_key = f"{widget_prefix}_sip_{kod}"
-                    if dolu_key in st.session_state or stok_key in st.session_state or sip_key in st.session_state:
-                        stok_dolu_taslak = bool(st.session_state.get(dolu_key, False))
-                        if stok_dolu_taslak:
-                            stok_taslak = "Reyon Dolu"
-                        else:
-                            stok_taslak = str(int(float(st.session_state.get(stok_key, 0.0) or 0.0)))
-                        sip_taslak = float(st.session_state.get(sip_key, 0.0) or 0.0)
-                        if stok_taslak != "0" or sip_taslak > 0:
-                            kaydedilecek_dict[kod] = {
-                                "sube": secilen_sube,
-                                "tarih": bugun_str,
-                                "urun_kodu": kod,
-                                "urun_adi": urun["ADI"],
-                                "mevcut_stok": stok_taslak,
-                                "siparis_miktari": sip_taslak
-                            }
-                        else:
-                            kaydedilecek_dict.pop(kod, None)
+                siparis_taslagi = st.session_state[siparis_taslak_key]
+                df = pd.DataFrame(URUNLER)
+                arama = st.text_input(
+                    "🔍 **Ürün Ara (Adı veya Kodu):**",
+                    "",
+                    key=f"urun_arama_{secilen_sube}_{bugun_str}",
+                )
+                filtre_df = (
+                    df[
+                        df["ADI"].str.contains(arama, case=False, na=False)
+                        | df["KODU"].str.contains(arama, case=False, na=False)
+                    ]
+                    if arama
+                    else df
+                )
 
                 st.subheader("📦 Stok ve Sipariş Girişi (Kasa)")
-                if arama:
-                    st.caption("🔒 Arama açıkken kaydettiğinizde ekranda görünmeyen mevcut siparişler korunur.")
 
-                for index, row in filtre_df.iterrows():
-                    kod = row['KODU']
-                    varsayilan_stok_str = kayitli_dict.get(kod, {}).get('stok', "0")
-                    varsayilan_siparis = kayitli_dict.get(kod, {}).get('siparis', 0.0)
-                    dolu_key = f"{widget_prefix}_dolu_{kod}"
-                    stok_key = f"{widget_prefix}_stok_{kod}"
-                    sip_key = f"{widget_prefix}_sip_{kod}"
+                for _, row in filtre_df.iterrows():
+                    kod = row["KODU"]
+                    urun_taslagi = siparis_taslagi.setdefault(
+                        kod,
+                        {"urun_adi": row["ADI"], "stok": "0", "siparis": 0.0},
+                    )
+                    varsayilan_stok_str = str(urun_taslagi.get("stok", "0"))
+                    varsayilan_siparis = float(urun_taslagi.get("siparis", 0.0) or 0.0)
+
+                    dolu_key = f"dolu_{secilen_sube}_{bugun_str}_{kod}"
+                    stok_key = f"stok_{secilen_sube}_{bugun_str}_{kod}"
+                    sip_key = f"sip_{secilen_sube}_{bugun_str}_{kod}"
+
+                    # Widget ilk kez oluşturuluyorsa taslaktaki değerleri yükle.
+                    if dolu_key not in st.session_state:
+                        st.session_state[dolu_key] = varsayilan_stok_str == "Reyon Dolu"
+                    if stok_key not in st.session_state:
+                        try:
+                            st.session_state[stok_key] = float(varsayilan_stok_str)
+                        except (TypeError, ValueError):
+                            st.session_state[stok_key] = 0.0
+                    if sip_key not in st.session_state:
+                        st.session_state[sip_key] = varsayilan_siparis
 
                     with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
                         col1, col2 = st.columns([1.5, 1])
                         with col1:
                             stok_dolu = st.checkbox(
                                 "🟢 Reyon Dolu (Depo Boş)",
-                                value=(varsayilan_stok_str == "Reyon Dolu"),
-                                key=dolu_key
+                                key=dolu_key,
                             )
                             if not stok_dolu:
-                                try:
-                                    def_val = float(varsayilan_stok_str)
-                                except ValueError:
-                                    def_val = 0.0
                                 stok_val = st.number_input(
-                                    "Mevcut Stok (Kasa)", min_value=0.0, step=1.0,
-                                    value=def_val, key=stok_key
+                                    "Mevcut Stok (Kasa)",
+                                    min_value=0.0,
+                                    step=1.0,
+                                    key=stok_key,
                                 )
                                 stok_kayit = str(int(stok_val))
                             else:
@@ -737,25 +725,41 @@ else:
 
                         with col2:
                             siparis = st.number_input(
-                                "Sipariş (Kasa)", min_value=0.0, step=1.0,
-                                value=float(varsayilan_siparis), key=sip_key
+                                "Sipariş (Kasa)",
+                                min_value=0.0,
+                                step=1.0,
+                                key=sip_key,
                             )
 
-                        if stok_kayit != "0" or siparis > 0:
-                            kaydedilecek_dict[kod] = {
-                                "sube": secilen_sube,
-                                "tarih": bugun_str,
-                                "urun_kodu": kod,
-                                "urun_adi": row['ADI'],
-                                "mevcut_stok": stok_kayit,
-                                "siparis_miktari": float(siparis)
-                            }
-                        else:
-                            # Kullanıcı görünen bir ürünün stok ve siparişini sıfırladıysa
-                            # yalnızca o ürün kayıttan çıkarılır; diğer ürünler korunur.
-                            kaydedilecek_dict.pop(kod, None)
+                    # Görünen ürünün son değerlerini tam taslağa işle.
+                    siparis_taslagi[kod] = {
+                        "urun_adi": row["ADI"],
+                        "stok": stok_kayit,
+                        "siparis": float(siparis),
+                    }
 
-                kaydedilecek_veriler = list(kaydedilecek_dict.values())
+                # Arama sonucu görünmeyen ürünler dahil tüm taslaktan kayıt listesi üret.
+                kaydedilecek_veriler = []
+                for urun in URUNLER:
+                    kod = urun["KODU"]
+                    veri = siparis_taslagi.get(
+                        kod, {"stok": "0", "siparis": 0.0, "urun_adi": urun["ADI"]}
+                    )
+                    stok_kayit = str(veri.get("stok", "0"))
+                    try:
+                        siparis_miktari = float(veri.get("siparis", 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        siparis_miktari = 0.0
+
+                    if stok_kayit != "0" or siparis_miktari > 0:
+                        kaydedilecek_veriler.append({
+                            "sube": secilen_sube,
+                            "tarih": bugun_str,
+                            "urun_kodu": kod,
+                            "urun_adi": urun["ADI"],
+                            "mevcut_stok": stok_kayit,
+                            "siparis_miktari": siparis_miktari,
+                        })
 
                 st.divider()
                 btn_col1, btn_col2 = st.columns([2, 1])
