@@ -7,6 +7,9 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from supabase import create_client, Client
 
+# Streamlit gereği sayfa yapılandırması ilk Streamlit komutu olmalıdır.
+st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
+
 # -------------------------------------------------------------
 # 🌐 SUPABASE BAĞLANTI BİLGİLERİ
 # -------------------------------------------------------------
@@ -14,6 +17,7 @@ try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except Exception:
+    # Geçiş dönemi için mevcut bağlantı korunur. Canlı ortamda secrets.toml kullanılmalıdır.
     SUPABASE_URL = "https://ngokzlndzpodmjiffmjv.supabase.co"
     SUPABASE_KEY = "sb_publishable_LJldycoOPfyCh-stDwAFjg_EVpjACxQ"
 
@@ -24,10 +28,9 @@ def init_supabase() -> Client:
 try:
     supabase = init_supabase()
 except Exception as e:
-    st.error("Supabase bağlantısı kurulamadı. Lütfen bilgilerinizi kontrol edin.")
-
-# Sayfa Yapılandırması
-st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", page_icon="🥭", layout="wide")
+    st.error("Supabase bağlantısı kurulamadı. Lütfen bağlantı bilgilerini kontrol edin.")
+    st.exception(e)
+    st.stop()
 
 # -------------------------------------------------------------
 # 🎨 CSS DÜZENLEMELERİ
@@ -101,8 +104,8 @@ SUBE_SIFRELERI = {
     "Aşiyan": "1010", "Zeytinlik": "1011"
 }
 
-HAL_SIFRESI = "2024"
-YONETICI_SIFRESI = "1234"
+HAL_SIFRESI = st.secrets.get("HAL_PASSWORD", "2024")
+YONETICI_SIFRESI = st.secrets.get("ADMIN_PASSWORD", "1234")
 
 URUNLER = [
     {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
@@ -160,6 +163,57 @@ if "hal_authed" not in st.session_state:
     st.session_state.hal_authed = False
 if "admin_authed" not in st.session_state:
     st.session_state.admin_authed = False
+
+
+def guvenli_sorgu(islem_adi, fn):
+    """Supabase işlemlerini kullanıcı dostu hata yönetimiyle çalıştırır."""
+    try:
+        return fn()
+    except Exception as exc:
+        st.error(f"❌ {islem_adi} sırasında bir hata oluştu. Veri bağlantınızı kontrol edip tekrar deneyin.")
+        st.exception(exc)
+        return None
+
+
+def tum_oturumlari_kapat():
+    st.session_state.site_giris_yapildi = False
+    st.session_state.giris_yapilan_sube = None
+    st.session_state.hal_authed = False
+    st.session_state.admin_authed = False
+
+
+def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar):
+    """Aynı tarih/ürün için mükerrer kayıt oluşmasını önler; hata halinde eski veriyi geri yükler."""
+    eski = supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute().data or []
+    try:
+        supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute()
+        if yeni_kayitlar:
+            supabase.table("hal_dagitim").insert(yeni_kayitlar).execute()
+        return True
+    except Exception:
+        try:
+            supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute()
+            if eski:
+                supabase.table("hal_dagitim").insert(eski).execute()
+        finally:
+            raise
+
+
+def sube_siparisini_degistir(sube, tarih, yeni_kayitlar):
+    """Şube siparişini günceller; ekleme başarısız olursa eski kayıtları geri yükler."""
+    eski = supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", sube).eq("tarih", tarih).execute().data or []
+    try:
+        supabase.table("siparisler").delete().eq("sube", sube).eq("tarih", tarih).execute()
+        if yeni_kayitlar:
+            supabase.table("siparisler").insert(yeni_kayitlar).execute()
+        return True
+    except Exception:
+        try:
+            supabase.table("siparisler").delete().eq("sube", sube).eq("tarih", tarih).execute()
+            if eski:
+                supabase.table("siparisler").insert(eski).execute()
+        finally:
+            raise
 
 
 def generate_hal_excel(urun_adi, urun_kodu, hal_toplam, dagitim_dict, kalan, tarih_str):
@@ -448,8 +502,7 @@ else:
             st.rerun()
     with m_col4:
         if st.button("🚪 Çıkış", use_container_width=True):
-            st.session_state.site_giris_yapildi = False
-            st.session_state.giris_yapilan_sube = None
+            tum_oturumlari_kapat()
             st.rerun()
 
     st.divider()
@@ -559,18 +612,27 @@ else:
                 btn_col1, btn_col2 = st.columns([2, 1])
                 with btn_col1:
                     if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
-                        supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
-                        if len(kaydedilecek_veriler) > 0:
-                            supabase.table("siparisler").insert(kaydedilecek_veriler).execute()
-                            st.success(f"✅ **{secilen_sube}** şubesinin siparişi buluta başarıyla kaydedildi!")
-                        else:
-                            st.warning("⚠️ Tüm değerler 0 yapıldığı için bugünkü siparişiniz temizlendi.")
-                        st.rerun()
+                        with st.spinner("Sipariş güvenli şekilde kaydediliyor..."):
+                            sonuc = guvenli_sorgu(
+                                "Sipariş kaydetme",
+                                lambda: sube_siparisini_degistir(secilen_sube, bugun_str, kaydedilecek_veriler)
+                            )
+                        if sonuc:
+                            if kaydedilecek_veriler:
+                                st.success(f"✅ **{secilen_sube}** şubesinin siparişi başarıyla kaydedildi!")
+                            else:
+                                st.warning("⚠️ Tüm değerler 0 olduğu için bugünkü sipariş temizlendi.")
+                            st.rerun()
                 with btn_col2:
-                    if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True):
-                        supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
-                        st.error("🗑️ Bugünkü siparişiniz tamamen silindi!")
-                        st.rerun()
+                    iptal_onayi = st.checkbox("Sipariş iptalini onaylıyorum", key=f"iptal_onay_{secilen_sube}")
+                    if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=not iptal_onayi):
+                        sonuc = guvenli_sorgu(
+                            "Sipariş iptali",
+                            lambda: supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                        )
+                        if sonuc is not None:
+                            st.error("🗑️ Bugünkü sipariş tamamen silindi!")
+                            st.rerun()
 
     # 2. HAL DAĞITIM PANELİ
     elif rol == "🚛 Hal Dağıtım Paneli":
@@ -670,9 +732,14 @@ else:
                                     "dağıtılan_miktar": float(miktar)
                                 })
                         if len(kayit_listesi) > 0:
-                            supabase.table("hal_dagitim").insert(kayit_listesi).execute()
-                            st.success(f"✅ **{secilen_urun_ad}** dağıtımı başarıyla kaydedildi!")
-                            st.rerun()
+                            with st.spinner("Dağıtım kaydı güvenli şekilde güncelleniyor..."):
+                                sonuc = guvenli_sorgu(
+                                    "Hal dağıtımı kaydetme",
+                                    lambda: hal_dagitimini_degistir(hal_tarih_str, secilen_urun_kod, kayit_listesi)
+                                )
+                            if sonuc:
+                                st.success(f"✅ **{secilen_urun_ad}** dağıtımı kaydedildi/güncellendi!")
+                                st.rerun()
                         else:
                             st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
             with h_btn2:
@@ -733,6 +800,17 @@ else:
                     df_res = pd.DataFrame(res.data)
                     df_res['siparis_miktari'] = pd.to_numeric(df_res['siparis_miktari'], errors='coerce').fillna(0)
                     df_res['mevcut_stok'] = df_res['mevcut_stok'].fillna("0").astype(str)
+
+                    siparis_veren_subeler = sorted(df_res['sube'].dropna().unique().tolist())
+                    siparis_vermeyen_subeler = [s for s in SUBE_LISTESI if s not in siparis_veren_subeler]
+                    tamamlanma = int(round((len(siparis_veren_subeler) / len(SUBE_LISTESI)) * 100))
+                    d1, d2, d3 = st.columns(3)
+                    d1.metric("✅ Sipariş Giren", f"{len(siparis_veren_subeler)} / {len(SUBE_LISTESI)} Şube")
+                    d2.metric("⏳ Sipariş Girmeyen", f"{len(siparis_vermeyen_subeler)} Şube")
+                    d3.metric("📈 Tamamlanma", f"%{tamamlanma}")
+                    with st.expander("🏬 Şube Sipariş Durumu", expanded=False):
+                        for s_name in SUBE_LISTESI:
+                            st.write(("🟢" if s_name in siparis_veren_subeler else "🔴") + f" {s_name}")
 
                     if arama_admin:
                         df_res = df_res[
@@ -875,7 +953,11 @@ else:
                 d_secim = st.radio("Hangi Tablodaki Verileri Temizlemek İstiyorsunuz?", ["Şube Siparişleri Tablosu", "Hal Dağıtım Tablosu", "Her İki Tabloyu da Temizle"])
 
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🔥 SEÇİLEN TARİHİN VERİLERİNİ KALICI OLARAK SİL", type="primary"):
+                kalici_sil_onayi = st.checkbox(
+                    f"{silme_tarihi.strftime('%d.%m.%Y')} tarihli verilerin kalıcı silinmesini onaylıyorum",
+                    key="kalici_sil_onayi"
+                )
+                if st.button("🔥 SEÇİLEN TARİHİN VERİLERİNİ KALICI OLARAK SİL", type="primary", disabled=not kalici_sil_onayi):
                     try:
                         if d_secim in ["Şube Siparişleri Tablosu", "Her İki Tabloyu da Temizle"]:
                             supabase.table("siparisler").delete().eq("tarih", silme_tarih_str).execute()
