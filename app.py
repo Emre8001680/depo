@@ -341,8 +341,12 @@ def guvenli_veri_oku(islem_adi, fn, varsayilan=None):
 
 def islem_logu_yaz(kullanici, rol, sube, islem, tablo, tarih, urun_kodu=None, urun_adi=None, eski_deger=None, yeni_deger=None, detay=None):
     """İşlem geçmişini kaydeder. Log tablosu sorunu ana işlemi durdurmaz."""
+    log_zamani = simdi_tr().isoformat()
     kayit = {
-        "islem_zamani": simdi_tr().isoformat(),
+        # Supabase tablosunda geçmişten kalan tarih_saat alanı da NOT NULL olduğu için
+        # her iki zaman alanına aynı Türkiye saati gönderilir.
+        "tarih_saat": log_zamani,
+        "islem_zamani": log_zamani,
         "kullanici": str(kullanici or "Bilinmiyor"),
         "rol": str(rol or "Bilinmiyor"),
         "sube": str(sube or ""),
