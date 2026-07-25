@@ -321,8 +321,10 @@ def guvenli_sorgu(islem_adi, fn):
         else:
             st.error(f"❌ {islem_adi} sırasında bir hata oluştu: {mesaj}")
         return None
-    except Exception:
-        st.error(f"❌ {islem_adi} sırasında bir hata oluştu. İnternet bağlantınızı kontrol edip tekrar deneyin.")
+    except Exception as exc:
+        hata_detayi = str(exc).strip() or exc.__class__.__name__
+        st.error(f"❌ {islem_adi} sırasında hata oluştu: {hata_detayi}")
+        st.caption("ℹ️ Bağlantı aktif olsa bile veritabanı yetkisi, tablo kuralı veya kayıt biçimi nedeniyle bu hata oluşabilir.")
         return None
 
 
@@ -360,21 +362,43 @@ def tum_oturumlari_kapat():
 
 def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None):
     """Aynı tarih/ürün için mükerrer kayıt ve eşzamanlı veri ezilmesini önler."""
-    eski = supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute().data or []
+    try:
+        eski = supabase.table("hal_dagitim").select(
+            "sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar"
+        ).eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute().data or []
+    except Exception as exc:
+        raise RuntimeError(f"Mevcut dağıtım kaydı okunamadı: {exc}") from exc
+
     if beklenen_ozet is not None and kayit_ozeti(eski) != beklenen_ozet:
         raise RuntimeError("ÇAKIŞMA: Bu dağıtım başka bir kullanıcı tarafından değiştirildi. Sayfayı yenileyip güncel veriyi kontrol edin.")
+
     try:
-        supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute()
+        supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq(
+            "urun_kodu", urun_kodu
+        ).execute()
+    except Exception as exc:
+        raise RuntimeError(f"Eski dağıtım kaydı silinemedi: {exc}") from exc
+
+    try:
         if yeni_kayitlar:
             supabase.table("hal_dagitim").insert(yeni_kayitlar).execute()
         return True
-    except Exception:
+    except Exception as exc:
+        # Yeni kayıt başarısız olursa eski kayıtları geri yüklemeyi dene.
+        geri_yukleme_hatasi = None
         try:
-            supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute()
+            supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq(
+                "urun_kodu", urun_kodu
+            ).execute()
             if eski:
                 supabase.table("hal_dagitim").insert(eski).execute()
-        finally:
-            raise
+        except Exception as rollback_exc:
+            geri_yukleme_hatasi = rollback_exc
+
+        mesaj = f"Yeni dağıtım kaydı eklenemedi: {exc}"
+        if geri_yukleme_hatasi is not None:
+            mesaj += f" | Eski kayıt da geri yüklenemedi: {geri_yukleme_hatasi}"
+        raise RuntimeError(mesaj) from exc
 
 
 def sube_siparisini_degistir(sube, tarih, yeni_kayitlar, beklenen_ozet=None):
