@@ -19,10 +19,9 @@ st.set_page_config(page_title="Yalçın Marketler Zinciri - Manav Portalı", pag
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-except Exception:
-    # Geçiş dönemi için mevcut bağlantı korunur. Canlı ortamda secrets.toml kullanılmalıdır.
-    SUPABASE_URL = "https://ngokzlndzpodmjiffmjv.supabase.co"
-    SUPABASE_KEY = "sb_publishable_LJldycoOPfyCh-stDwAFjg_EVpjACxQ"
+except KeyError:
+    st.error("Sistem bağlantı ayarları eksik: SUPABASE_URL ve SUPABASE_KEY tanımlanmalıdır.")
+    st.stop()
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -1034,9 +1033,13 @@ else:
                                 )
                             if sonuc:
                                 st.success(f"✅ **{secilen_urun_ad}** dağıtımı kaydedildi/güncellendi!")
-                                guncel_hal = supabase.table("hal_dagitim").select(
-                                    "sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar"
-                                ).eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
+                                guncel_hal = guvenli_veri_oku(
+                                    "Kaydedilen hal dağıtımını doğrulama",
+                                    lambda: supabase.table("hal_dagitim").select(
+                                        "sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar"
+                                    ).eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or [],
+                                    varsayilan=kayit_listesi,
+                                )
                                 st.session_state[hal_snapshot_key] = kayit_ozeti(guncel_hal)
                                 # Başarılı kayıttan sonra taslağı doğrudan kaydedilen değerlerle güncelle.
                                 hal_taslaklari[hal_taslak_key] = {
@@ -1098,10 +1101,13 @@ else:
                 query = supabase.table("siparisler").select("*").eq("tarih", tarih_str)
                 if filtre_sube != "Tümü":
                     query = query.eq("sube", filtre_sube)
-                res = query.execute()
+                siparis_merkez_verileri = guvenli_veri_oku(
+                    "Merkez sipariş verilerini okuma",
+                    lambda: query.execute().data or [],
+                )
 
-                if res.data:
-                    df_res = pd.DataFrame(res.data)
+                if siparis_merkez_verileri:
+                    df_res = pd.DataFrame(siparis_merkez_verileri)
                     df_res['siparis_miktari'] = pd.to_numeric(df_res['siparis_miktari'], errors='coerce').fillna(0)
                     df_res['mevcut_stok'] = df_res['mevcut_stok'].fillna("0").astype(str)
 
@@ -1216,10 +1222,13 @@ else:
                 query_h = supabase.table("hal_dagitim").select("*").eq("tarih", tarih_str)
                 if filtre_sube != "Tümü":
                     query_h = query_h.eq("sube", filtre_sube)
-                res_h = query_h.execute()
+                hal_merkez_verileri = guvenli_veri_oku(
+                    "Merkez hal sevkiyat verilerini okuma",
+                    lambda: query_h.execute().data or [],
+                )
 
-                if res_h.data:
-                    df_h = pd.DataFrame(res_h.data)
+                if hal_merkez_verileri:
+                    df_h = pd.DataFrame(hal_merkez_verileri)
                     df_h['dağıtılan_miktar'] = pd.to_numeric(df_h['dağıtılan_miktar'], errors='coerce').fillna(0)
                     if arama_admin:
                         df_h = df_h[
