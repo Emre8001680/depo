@@ -1210,7 +1210,7 @@ else:
                         })
 
                 st.divider()
-                btn_col1, btn_col2 = st.columns([2, 1])
+                btn_col1, btn_col2, btn_col3 = st.columns([2, 1.15, 1.15])
                 with btn_col1:
                     if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
                         with st.spinner("Sipariş güvenli şekilde kaydediliyor..."):
@@ -1226,7 +1226,20 @@ else:
                                 st.warning("⚠️ Tüm değerler 0 olduğu için bugünkü sipariş temizlendi.")
                                 st.session_state[siparis_snapshot_key] = kayit_ozeti([])
                             st.rerun()
+
                 with btn_col2:
+                    st.caption("Başka kullanıcı değişiklik yaptıysa:")
+                    if st.button(
+                        "🔄 Güncel Veriyi Yeniden Yükle",
+                        type="secondary",
+                        use_container_width=True,
+                        help="Ekrandaki kaydedilmemiş taslağı temizler ve Supabase'deki en güncel siparişi yeniden açar.",
+                    ):
+                        siparis_oturumunu_temizle(secilen_sube, bugun_str)
+                        st.toast("Güncel sipariş verileri yeniden yükleniyor...", icon="🔄")
+                        st.rerun()
+
+                with btn_col3:
                     iptal_onayi = st.checkbox("Sipariş iptalini onaylıyorum", key=f"iptal_onay_{secilen_sube}")
                     if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=not iptal_onayi):
                         sonuc = guvenli_sorgu(
