@@ -337,6 +337,72 @@ def guvenli_veri_oku(islem_adi, fn, varsayilan=None):
         return [] if varsayilan is None else varsayilan
 
 
+
+
+def islem_logu_yaz(kullanici, rol, sube, islem, tablo, tarih, urun_kodu=None, urun_adi=None, eski_deger=None, yeni_deger=None, detay=None):
+    """İşlem geçmişini kaydeder. Log tablosu sorunu ana işlemi durdurmaz."""
+    kayit = {
+        "islem_zamani": simdi_tr().isoformat(),
+        "kullanici": str(kullanici or "Bilinmiyor"),
+        "rol": str(rol or "Bilinmiyor"),
+        "sube": str(sube or ""),
+        "islem": str(islem),
+        "tablo": str(tablo),
+        "kayit_tarihi": str(tarih),
+        "urun_kodu": str(urun_kodu or ""),
+        "urun_adi": str(urun_adi or ""),
+        "eski_deger": json.dumps(eski_deger, ensure_ascii=False, default=str) if eski_deger is not None else None,
+        "yeni_deger": json.dumps(yeni_deger, ensure_ascii=False, default=str) if yeni_deger is not None else None,
+        "detay": str(detay or ""),
+    }
+    try:
+        supabase.table("islem_loglari").insert(kayit).execute()
+        return True
+    except Exception:
+        return False
+
+
+def kayitlari_kodla(kayitlar, deger_alanlari):
+    """Log karşılaştırması için kayıtları ürün+şube bazında sözlüğe dönüştürür."""
+    sonuc = {}
+    for r in kayitlar or []:
+        anahtar = (str(r.get("urun_kodu", "")), str(r.get("sube", "")))
+        sonuc[anahtar] = {alan: r.get(alan) for alan in deger_alanlari}
+        sonuc[anahtar]["urun_adi"] = r.get("urun_adi", "")
+    return sonuc
+
+
+def degisiklik_loglarini_yaz(eski, yeni, kullanici, rol, varsayilan_sube, tablo, tarih, deger_alanlari, islem_adi):
+    """Eklenen, güncellenen ve silinen satırları ayrı ayrı loglar."""
+    eski_map = kayitlari_kodla(eski, deger_alanlari)
+    yeni_map = kayitlari_kodla(yeni, deger_alanlari)
+    for anahtar in sorted(set(eski_map) | set(yeni_map)):
+        once = eski_map.get(anahtar)
+        sonra = yeni_map.get(anahtar)
+        if once == sonra:
+            continue
+        kod, kayit_sube = anahtar
+        urun_adi = (sonra or once or {}).get("urun_adi", "")
+        if once is None:
+            hareket = f"{islem_adi} - Eklendi"
+        elif sonra is None:
+            hareket = f"{islem_adi} - Silindi"
+        else:
+            hareket = f"{islem_adi} - Güncellendi"
+        islem_logu_yaz(
+            kullanici=kullanici,
+            rol=rol,
+            sube=kayit_sube or varsayilan_sube,
+            islem=hareket,
+            tablo=tablo,
+            tarih=tarih,
+            urun_kodu=kod,
+            urun_adi=urun_adi,
+            eski_deger=once,
+            yeni_deger=sonra,
+        )
+
+
 def siparis_oturumunu_temizle(sube, tarih):
     """Sipariş silindikten sonra eski taslak ve widget değerlerini oturumdan kaldırır."""
     onekler = (
@@ -360,7 +426,8 @@ def tum_oturumlari_kapat():
     st.session_state.admin_authed = False
 
 
-def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None):
+def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None, kullanici="Hal Yetkilisi"):
+
     """Aynı tarih/ürün için mükerrer kayıt ve eşzamanlı veri ezilmesini önler."""
     try:
         eski = supabase.table("hal_dagitim").select(
@@ -387,6 +454,10 @@ def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None)
     try:
         if yeni_kayitlar:
             supabase.table("hal_dagitim").insert(yeni_kayitlar).execute()
+        degisiklik_loglarini_yaz(
+            eski, yeni_kayitlar, kullanici, "Hal", "", "hal_dagitim", tarih,
+            ["dağıtılan_miktar"], "Hal dağıtımı"
+        )
         return True
     except Exception as exc:
         # Yeni kayıt başarısız olursa eski kayıtları geri yüklemeyi dene.
@@ -406,7 +477,8 @@ def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None)
         raise RuntimeError(mesaj) from exc
 
 
-def sube_siparisini_degistir(sube, tarih, yeni_kayitlar, beklenen_ozet=None):
+def sube_siparisini_degistir(sube, tarih, yeni_kayitlar, beklenen_ozet=None, kullanici=None):
+
     """Şube siparişini günceller; çakışma veya hata halinde veri kaybını engeller."""
     eski = supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", sube).eq("tarih", tarih).execute().data or []
     if beklenen_ozet is not None and kayit_ozeti(eski) != beklenen_ozet:
@@ -415,6 +487,10 @@ def sube_siparisini_degistir(sube, tarih, yeni_kayitlar, beklenen_ozet=None):
         supabase.table("siparisler").delete().eq("sube", sube).eq("tarih", tarih).execute()
         if yeni_kayitlar:
             supabase.table("siparisler").insert(yeni_kayitlar).execute()
+        degisiklik_loglarini_yaz(
+            eski, yeni_kayitlar, kullanici or sube, "Şube", sube, "siparisler", tarih,
+            ["mevcut_stok", "siparis_miktari"], "Şube siparişi"
+        )
         return True
     except Exception:
         try:
@@ -1136,7 +1212,7 @@ else:
                         with st.spinner("Sipariş güvenli şekilde kaydediliyor..."):
                             sonuc = guvenli_sorgu(
                                 "Sipariş kaydetme",
-                                lambda: sube_siparisini_degistir(secilen_sube, bugun_str, kaydedilecek_veriler, st.session_state.get(siparis_snapshot_key))
+                                lambda: sube_siparisini_degistir(secilen_sube, bugun_str, kaydedilecek_veriler, st.session_state.get(siparis_snapshot_key), kullanici=secilen_sube)
                             )
                         if sonuc:
                             if kaydedilecek_veriler:
@@ -1152,7 +1228,7 @@ else:
                         sonuc = guvenli_sorgu(
                             "Sipariş iptali",
                             lambda: sube_siparisini_degistir(
-                                secilen_sube, bugun_str, [], st.session_state.get(siparis_snapshot_key)
+                                secilen_sube, bugun_str, [], st.session_state.get(siparis_snapshot_key), kullanici=secilen_sube
                             )
                         )
                         if sonuc:
@@ -1359,7 +1435,7 @@ else:
                             with st.spinner("Dağıtım kaydı güvenli şekilde güncelleniyor..."):
                                 sonuc = guvenli_sorgu(
                                     "Hal dağıtımı kaydetme",
-                                    lambda: hal_dagitimini_degistir(hal_tarih_str, secilen_urun_kod, kayit_listesi, st.session_state.get(hal_snapshot_key))
+                                    lambda: hal_dagitimini_degistir(hal_tarih_str, secilen_urun_kod, kayit_listesi, st.session_state.get(hal_snapshot_key), kullanici="Hal Yetkilisi")
                                 )
                             if sonuc:
                                 st.success(f"✅ **{secilen_urun_ad}** dağıtımı kaydedildi/güncellendi!")
@@ -1419,12 +1495,76 @@ else:
 
             st.divider()
 
-            # SEKMELER (Şube Talepleri, Hal Sevkiyatları ve Geçmiş Veri Yönetimi)
-            tab_sip, tab_hal, tab_yonetim = st.tabs([
+            # SEKMELER
+            tab_dashboard, tab_sip, tab_hal, tab_log, tab_yonetim = st.tabs([
+                "📊 Yönetim Dashboard",
                 "🛒 Şube Sipariş ve Stok Matrisi", 
                 "🚛 Hal Sevkiyat ve Dağıtım Verileri",
+                "🧾 İşlem Geçmişi",
                 "🗑️ Veri / Geçmiş Yönetimi (Silme)"
             ])
+
+            with tab_dashboard:
+                dash_sip = guvenli_veri_oku(
+                    "Dashboard sipariş verilerini okuma",
+                    lambda: supabase.table("siparisler").select("sube,urun_kodu,urun_adi,siparis_miktari").eq("tarih", tarih_str).execute().data or [],
+                )
+                dash_hal = guvenli_veri_oku(
+                    "Dashboard hal verilerini okuma",
+                    lambda: supabase.table("hal_dagitim").select("sube,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", tarih_str).execute().data or [],
+                )
+
+                df_ds = pd.DataFrame(dash_sip)
+                df_dh = pd.DataFrame(dash_hal)
+                if not df_ds.empty:
+                    df_ds["siparis_miktari"] = pd.to_numeric(df_ds["siparis_miktari"], errors="coerce").fillna(0)
+                if not df_dh.empty:
+                    df_dh["dağıtılan_miktar"] = pd.to_numeric(df_dh["dağıtılan_miktar"], errors="coerce").fillna(0)
+
+                siparis_toplam = float(df_ds["siparis_miktari"].sum()) if not df_ds.empty else 0
+                sevk_toplam = float(df_dh["dağıtılan_miktar"].sum()) if not df_dh.empty else 0
+                giren_subeler = sorted(df_ds["sube"].dropna().unique().tolist()) if not df_ds.empty else []
+                urun_sayisi = int(df_ds.loc[df_ds["siparis_miktari"] > 0, "urun_kodu"].nunique()) if not df_ds.empty else 0
+
+                st.subheader(f"📊 {secilen_tarih.strftime('%d.%m.%Y')} Yönetim Özeti")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Sipariş Giren Şube", f"{len(giren_subeler)} / {len(SUBE_LISTESI)}")
+                k2.metric("Sipariş Verilen Ürün", f"{urun_sayisi}")
+                k3.metric("Toplam Sipariş", f"{siparis_toplam:.0f} Kasa")
+                k4.metric("Toplam Sevkiyat", f"{sevk_toplam:.0f} Kasa")
+
+                eksik_subeler = [s for s in SUBE_LISTESI if s not in giren_subeler]
+                durum_col1, durum_col2 = st.columns(2)
+                with durum_col1:
+                    st.markdown("#### 🟢 Sipariş Giren Şubeler")
+                    st.write(", ".join(giren_subeler) if giren_subeler else "Henüz sipariş giren şube yok.")
+                with durum_col2:
+                    st.markdown("#### 🔴 Sipariş Girmeyen Şubeler")
+                    st.write(", ".join(eksik_subeler) if eksik_subeler else "Tüm şubeler siparişini girdi.")
+
+                if not df_ds.empty and siparis_toplam > 0:
+                    st.divider()
+                    g1, g2 = st.columns(2)
+                    with g1:
+                        st.markdown("#### 🏬 Şube Bazlı Toplam Sipariş")
+                        sube_grafik = df_ds.groupby("sube", as_index=False)["siparis_miktari"].sum().sort_values("siparis_miktari", ascending=False)
+                        st.bar_chart(sube_grafik.set_index("sube"))
+                    with g2:
+                        st.markdown("#### 🥇 En Çok Sipariş Verilen 10 Ürün")
+                        urun_grafik = df_ds.groupby("urun_adi", as_index=False)["siparis_miktari"].sum().sort_values("siparis_miktari", ascending=False).head(10)
+                        st.bar_chart(urun_grafik.set_index("urun_adi"))
+
+                    top_urunler = df_ds.groupby(["urun_kodu", "urun_adi"], as_index=False)["siparis_miktari"].sum().sort_values("siparis_miktari", ascending=False).head(10)
+                    top_urunler = top_urunler.rename(columns={"urun_kodu":"Ürün Kodu", "urun_adi":"Ürün Adı", "siparis_miktari":"Toplam Sipariş (Kasa)"})
+                    st.dataframe(top_urunler, use_container_width=True, hide_index=True)
+                else:
+                    st.info("ℹ️ Seçilen tarihte dashboard oluşturacak sipariş verisi bulunmuyor.")
+
+                if not df_dh.empty and sevk_toplam > 0:
+                    st.divider()
+                    st.markdown("#### 🚚 Şube Bazlı Sevkiyat")
+                    sevk_grafik = df_dh.groupby("sube", as_index=False)["dağıtılan_miktar"].sum().sort_values("dağıtılan_miktar", ascending=False)
+                    st.bar_chart(sevk_grafik.set_index("sube"))
 
             # SEKME 1: ÇOK SÜTUNLU YAN YANA STOK VE SİPARİŞ MATRİSİ
             with tab_sip:
@@ -1610,6 +1750,37 @@ else:
                 else:
                     st.info(f"ℹ️ {secilen_tarih.strftime('%d.%m.%Y')} tarihi için halden yapılmış bir dağıtım/sevkiyat kaydı bulunmuyor.")
 
+
+            # SEKME 4: İŞLEM GEÇMİŞİ
+            with tab_log:
+                st.subheader("🧾 İşlem Geçmişi")
+                st.caption("Şube siparişi ve hal dağıtımı üzerindeki ekleme, güncelleme ve silme hareketleri burada görünür.")
+                loglar = guvenli_veri_oku(
+                    "İşlem geçmişini okuma",
+                    lambda: supabase.table("islem_loglari").select("*").eq("kayit_tarihi", tarih_str).order("islem_zamani", desc=True).limit(1000).execute().data or [],
+                )
+                if loglar:
+                    df_log = pd.DataFrame(loglar)
+                    gosterilecek = [c for c in ["islem_zamani", "kullanici", "rol", "sube", "islem", "urun_kodu", "urun_adi", "eski_deger", "yeni_deger", "detay"] if c in df_log.columns]
+                    df_log = df_log[gosterilecek]
+                    if "islem_zamani" in df_log.columns:
+                        df_log["islem_zamani"] = pd.to_datetime(df_log["islem_zamani"], errors="coerce").dt.strftime("%d.%m.%Y %H:%M:%S")
+                    df_log = df_log.rename(columns={
+                        "islem_zamani":"İşlem Zamanı", "kullanici":"Kullanıcı", "rol":"Rol", "sube":"Şube",
+                        "islem":"İşlem", "urun_kodu":"Ürün Kodu", "urun_adi":"Ürün Adı",
+                        "eski_deger":"Eski Değer", "yeni_deger":"Yeni Değer", "detay":"Detay"
+                    })
+                    st.dataframe(df_log, use_container_width=True, hide_index=True)
+                    st.download_button(
+                        "📥 İşlem Geçmişini CSV İndir",
+                        data=df_log.to_csv(index=False).encode("utf-8-sig"),
+                        file_name=f"Islem_Gecmisi_{tarih_str}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("ℹ️ Bu tarihte işlem kaydı bulunamadı. islem_loglari tablosu henüz oluşturulmadıysa aşağıdaki SQL dosyasını Supabase'te bir kez çalıştırın.")
+
             # SEKME 3: GEÇMİŞ VERİLERİ SİLME / TEMİZLEME YÖNETİMİ
             with tab_yonetim:
                 st.subheader("💾 Sistem Yedeği")
@@ -1659,6 +1830,10 @@ else:
                             supabase.table("siparisler").delete().eq("tarih", silme_tarih_str).execute()
                         if d_secim in ["Hal Dağıtım Tablosu", "Her İki Tabloyu da Temizle"]:
                             supabase.table("hal_dagitim").delete().eq("tarih", silme_tarih_str).execute()
+                        islem_logu_yaz(
+                            "Merkez Yönetici", "Merkez", "", "Tarih bazlı kalıcı veri silme",
+                            "siparisler/hal_dagitim", silme_tarih_str, detay=d_secim
+                        )
                         
                         st.success(f"✅ {silme_tarihi.strftime('%d.%m.%Y')} tarihine ait seçilen veriler başarıyla temizlendi!")
                         st.rerun()
