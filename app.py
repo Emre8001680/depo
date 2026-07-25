@@ -535,113 +535,218 @@ def generate_toplu_hal_excel(tarih_sorgu_str):
 
 
 # ŞUBE SİPARİŞ MATRİSİNİ EXCEL'E AKTARMA FONKSİYONU
-def generate_sube_siparis_excel(tarih_sorgu_str, df_wide):
+# format_tipi: "standart", "a3" veya "a4_bolunmus"
+def generate_sube_siparis_excel(tarih_sorgu_str, df_wide, format_tipi="standart"):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Sube_Stok_Siparis_Matrisi"
-    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
+    wb.remove(wb.active)
 
-    thin = Side(border_style="thin", color="D3D3D3")
+    thin = Side(border_style="thin", color="B7C9B7")
+    medium = Side(border_style="medium", color="5B7F5B")
     border = Border(top=thin, left=thin, right=thin, bottom=thin)
-    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    strong_border = Border(top=medium, left=medium, right=medium, bottom=medium)
+    title_fill = PatternFill(start_color="1F6B3A", end_color="1F6B3A", fill_type="solid")
+    header_fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+    subheader_fill = PatternFill(start_color="E2F0D9", end_color="E2F0D9", fill_type="solid")
+    total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    zebra_fill = PatternFill(start_color="F7FBF7", end_color="F7FBF7", fill_type="solid")
+    font_title = Font(name="Calibri", size=16, bold=True, color="FFFFFF")
+    font_subtitle = Font(name="Calibri", size=11, bold=True, color="1F1F1F")
     font_bold = Font(name="Calibri", size=10, bold=True)
-    font_title = Font(name="Calibri", size=13, bold=True)
     font_normal = Font(name="Calibri", size=9)
+    font_print = Font(name="Calibri", size=10)
 
-    ws.cell(row=1, column=1, value=f"YALÇIN MARKETLER ZİNCİRİ - ŞUBE STOK VE SİPARİŞ MATRİSİ ({tarih_sorgu_str})").font = font_title
+    try:
+        rapor_tarihi = datetime.strptime(tarih_sorgu_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError:
+        rapor_tarihi = tarih_sorgu_str
 
-    # Başlıkları yazdır
-    ws.cell(row=3, column=1, value="Ürün Kodu").font = font_bold
-    ws.cell(row=3, column=2, value="Ürün Adı").font = font_bold
-    ws.cell(row=3, column=1).fill = header_fill
-    ws.cell(row=3, column=2).fill = header_fill
-    ws.cell(row=3, column=1).border = border
-    ws.cell(row=3, column=2).border = border
+    olusturma_zamani = simdi_tr().strftime("%d.%m.%Y %H:%M")
+    toplam_urun = len(df_wide)
+    toplam_siparis = float(pd.to_numeric(df_wide.get("toplam_sip", 0), errors="coerce").fillna(0).sum())
 
-    c_idx = 3
-    sube_list_cols = SUBE_LISTESI
-    for s_name in sube_list_cols:
-        ws.merge_cells(start_row=3, start_column=c_idx, end_row=3, end_column=c_idx+1)
-        cell = ws.cell(row=3, column=c_idx, value=s_name)
-        cell.font = font_bold
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        
-        ws.cell(row=4, column=c_idx, value="Stok").font = font_bold
-        ws.cell(row=4, column=c_idx+1, value="Sip.").font = font_bold
-        ws.cell(row=4, column=c_idx).fill = header_fill
-        ws.cell(row=4, column=c_idx+1).fill = header_fill
-        ws.cell(row=4, column=c_idx).border = border
-        ws.cell(row=4, column=c_idx+1).border = border
-        ws.cell(row=3, column=c_idx).border = border
-        ws.cell(row=3, column=c_idx+1).border = border
-        c_idx += 2
+    def sayisal_siparis(deger):
+        try:
+            return float(deger) if deger not in ("", "-", None) else 0.0
+        except (TypeError, ValueError):
+            return 0.0
 
-    # Genel Toplam Başlıkları
-    ws.merge_cells(start_row=3, start_column=c_idx, end_row=3, end_column=c_idx+1)
-    cell_tot = ws.cell(row=3, column=c_idx, value="GENEL TOPLAM")
-    cell_tot.font = font_bold
-    cell_tot.fill = header_fill
-    cell_tot.alignment = Alignment(horizontal="center", vertical="center")
+    def sayfa_olustur(sheet_name, subeler, genel_toplam_ekle=True, kagit="A4", tek_sayfaya_sigdir=False):
+        ws = wb.create_sheet(title=sheet_name[:31])
+        ws.sheet_view.showGridLines = False
+        ws.freeze_panes = "C5"
+        ws.auto_filter.ref = None
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.page_setup.paperSize = ws.PAPERSIZE_A3 if kagit == "A3" else ws.PAPERSIZE_A4
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.page_margins.left = 0.2
+        ws.page_margins.right = 0.2
+        ws.page_margins.top = 0.45
+        ws.page_margins.bottom = 0.45
+        ws.page_margins.header = 0.15
+        ws.page_margins.footer = 0.2
+        ws.print_title_rows = "3:4"
+        ws.oddFooter.center.text = "Yalçın Marketler Zinciri - Manav Sipariş ve Stok Yönetim Portalı"
+        ws.oddFooter.right.text = "Sayfa &P / &N"
+        ws.oddFooter.left.text = f"Rapor: {rapor_tarihi}"
+        ws.sheet_properties.pageSetUpPr.autoPageBreaks = False
+        ws.page_setup.scale = 80 if tek_sayfaya_sigdir else None
 
-    ws.cell(row=4, column=c_idx, value="Top. Stok / RD").font = font_bold
-    ws.cell(row=4, column=c_idx+1, value="Top. Sipariş").font = font_bold
-    ws.cell(row=4, column=c_idx).fill = header_fill
-    ws.cell(row=4, column=c_idx+1).fill = header_fill
-    ws.cell(row=4, column=c_idx).border = border
-    ws.cell(row=4, column=c_idx+1).border = border
-    ws.cell(row=3, column=c_idx).border = border
-    ws.cell(row=3, column=c_idx+1).border = border
+        son_kolon = 2 + (len(subeler) * 2) + (2 if genel_toplam_ekle else 0)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=son_kolon)
+        t = ws.cell(row=1, column=1, value="YALÇIN MARKETLER ZİNCİRİ - MANAV STOK VE SİPARİŞ RAPORU")
+        t.font = font_title
+        t.fill = title_fill
+        t.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 28
 
-    row_idx = 5
-    for _, r in df_wide.iterrows():
-        ws.cell(row=row_idx, column=1, value=str(r['urun_kodu'])).font = font_normal
-        ws.cell(row=row_idx, column=2, value=str(r['urun_adi'])).font = font_normal
-        ws.cell(row=row_idx, column=1).border = border
-        ws.cell(row=row_idx, column=2).border = border
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=son_kolon)
+        info = ws.cell(
+            row=2,
+            column=1,
+            value=(f"Rapor Tarihi: {rapor_tarihi}   |   Oluşturma: {olusturma_zamani}   |   "
+                   f"Toplam Ürün: {toplam_urun}   |   Toplam Sipariş: {toplam_siparis:.0f} Kasa")
+        )
+        info.font = font_subtitle
+        info.alignment = Alignment(horizontal="center", vertical="center")
+        info.fill = subheader_fill
+        ws.row_dimensions[2].height = 22
 
-        curr_c = 3
-        for s_name in sube_list_cols:
-            stok_val = r.get(f"{s_name}_stok", "-")
-            sip_val = r.get(f"{s_name}_sip", "-")
+        for col, value in ((1, "Ürün Kodu"), (2, "Ürün Adı")):
+            c = ws.cell(row=3, column=col, value=value)
+            c.font = font_bold
+            c.fill = header_fill
+            c.border = strong_border
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            ws.merge_cells(start_row=3, start_column=col, end_row=4, end_column=col)
 
-            c_s = ws.cell(row=row_idx, column=curr_c, value=str(stok_val))
-            c_p = ws.cell(row=row_idx, column=curr_c+1, value=sip_val if sip_val != "-" else "")
-            
-            c_s.font = font_normal
-            c_p.font = font_normal
-            c_s.alignment = Alignment(horizontal="center")
-            c_p.alignment = Alignment(horizontal="center")
-            c_s.border = border
-            c_p.border = border
-            curr_c += 2
+        c_idx = 3
+        for s_name in subeler:
+            ws.merge_cells(start_row=3, start_column=c_idx, end_row=3, end_column=c_idx + 1)
+            c = ws.cell(row=3, column=c_idx, value=s_name)
+            c.font = font_bold
+            c.fill = header_fill
+            c.border = strong_border
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            ws.cell(row=3, column=c_idx + 1).border = strong_border
 
-        # Genel toplam değerleri
-        gt_stok = r.get("toplam_stok", "-")
-        gt_sip = r.get("toplam_sip", 0)
-        
-        c_gs = ws.cell(row=row_idx, column=curr_c, value=str(gt_stok))
-        c_gp = ws.cell(row=row_idx, column=curr_c+1, value=gt_sip if gt_sip > 0 else "")
-        c_gs.font = font_bold
-        c_gp.font = font_bold
-        c_gs.alignment = Alignment(horizontal="center")
-        c_gp.alignment = Alignment(horizontal="center")
-        c_gs.border = border
-        c_gp.border = border
+            for offset, text in ((0, "Stok"), (1, "Sip.")):
+                sc = ws.cell(row=4, column=c_idx + offset, value=text)
+                sc.font = font_bold
+                sc.fill = subheader_fill
+                sc.border = border
+                sc.alignment = Alignment(horizontal="center", vertical="center")
+            c_idx += 2
 
+        if genel_toplam_ekle:
+            ws.merge_cells(start_row=3, start_column=c_idx, end_row=3, end_column=c_idx + 1)
+            c = ws.cell(row=3, column=c_idx, value="GENEL TOPLAM")
+            c.font = font_bold
+            c.fill = total_fill
+            c.border = strong_border
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=3, column=c_idx + 1).border = strong_border
+            for offset, text in ((0, "Top. Stok / RD"), (1, "Top. Sipariş")):
+                sc = ws.cell(row=4, column=c_idx + offset, value=text)
+                sc.font = font_bold
+                sc.fill = total_fill
+                sc.border = border
+                sc.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        row_idx = 5
+        for sira, (_, r) in enumerate(df_wide.iterrows(), start=1):
+            row_fill = zebra_fill if sira % 2 == 0 else None
+            ws.cell(row=row_idx, column=1, value=str(r["urun_kodu"]))
+            ws.cell(row=row_idx, column=2, value=str(r["urun_adi"]))
+            for col in (1, 2):
+                c = ws.cell(row=row_idx, column=col)
+                c.font = font_print if format_tipi != "standart" else font_normal
+                c.border = border
+                c.alignment = Alignment(vertical="center", wrap_text=(col == 2))
+                if row_fill:
+                    c.fill = row_fill
+
+            curr_c = 3
+            for s_name in subeler:
+                stok_val = r.get(f"{s_name}_stok", "-")
+                sip_val = r.get(f"{s_name}_sip", "-")
+                values = (str(stok_val), sayisal_siparis(sip_val) or "")
+                for offset, value in enumerate(values):
+                    c = ws.cell(row=row_idx, column=curr_c + offset, value=value)
+                    c.font = font_print if format_tipi != "standart" else font_normal
+                    c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    c.border = border
+                    if row_fill:
+                        c.fill = row_fill
+                curr_c += 2
+
+            if genel_toplam_ekle:
+                gt_stok = r.get("toplam_stok", "-")
+                gt_sip = sayisal_siparis(r.get("toplam_sip", 0))
+                for offset, value in ((0, str(gt_stok)), (1, gt_sip or "")):
+                    c = ws.cell(row=row_idx, column=curr_c + offset, value=value)
+                    c.font = font_bold
+                    c.fill = total_fill
+                    c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    c.border = border
+            ws.row_dimensions[row_idx].height = 19 if format_tipi == "standart" else 22
+            row_idx += 1
+
+        # Şube toplamları özeti
+        row_idx += 1
+        ws.cell(row=row_idx, column=1, value="ŞUBE SİPARİŞ ÖZETİ").font = font_bold
+        ws.cell(row=row_idx, column=1).fill = title_fill
+        ws.cell(row=row_idx, column=1).font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+        ws.cell(row=row_idx, column=1).alignment = Alignment(horizontal="center")
         row_idx += 1
 
-    ws.column_dimensions['A'].width = 12
-    ws.column_dimensions['B'].width = 25
-    for c in range(3, curr_c + 2):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = 12
+        ozet_baslangic = row_idx
+        for s_name in subeler:
+            toplam = sum(sayisal_siparis(v) for v in df_wide.get(f"{s_name}_sip", []))
+            ws.cell(row=row_idx, column=1, value=s_name)
+            ws.cell(row=row_idx, column=2, value=toplam)
+            ws.cell(row=row_idx, column=2).number_format = '0 "Kasa"'
+            for col in (1, 2):
+                c = ws.cell(row=row_idx, column=col)
+                c.border = border
+                c.font = font_bold if col == 2 else font_normal
+                c.alignment = Alignment(horizontal="center" if col == 2 else "left")
+            row_idx += 1
+        ws.cell(row=row_idx, column=1, value="GENEL TOPLAM")
+        ws.cell(row=row_idx, column=2, value=toplam_siparis)
+        ws.cell(row=row_idx, column=2).number_format = '0 "Kasa"'
+        for col in (1, 2):
+            c = ws.cell(row=row_idx, column=col)
+            c.font = font_bold
+            c.fill = total_fill
+            c.border = strong_border
+
+        ws.column_dimensions["A"].width = 14
+        ws.column_dimensions["B"].width = 30 if format_tipi != "a4_bolunmus" else 34
+        for col in range(3, son_kolon + 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 10 if format_tipi == "a4_bolunmus" else 9
+
+        ws.auto_filter.ref = f"A4:{openpyxl.utils.get_column_letter(son_kolon)}{row_idx - len(subeler) - 3}"
+        ws.print_area = f"A1:{openpyxl.utils.get_column_letter(son_kolon)}{row_idx}"
+        ws.sheet_properties.outlinePr.summaryBelow = True
+        ws.sheet_view.zoomScale = 85
+        return ws
+
+    if format_tipi == "a4_bolunmus":
+        ilk_grup = SUBE_LISTESI[:5]
+        ikinci_grup = SUBE_LISTESI[5:]
+        sayfa_olustur("A4_1_Ilk_5_Sube", ilk_grup, genel_toplam_ekle=False, kagit="A4")
+        sayfa_olustur("A4_2_Diger_Subeler", ikinci_grup, genel_toplam_ekle=True, kagit="A4")
+    elif format_tipi == "a3":
+        sayfa_olustur("A3_Tek_Sayfa", SUBE_LISTESI, genel_toplam_ekle=True, kagit="A3", tek_sayfaya_sigdir=True)
+    else:
+        sayfa_olustur("Duzenlenebilir_Matris", SUBE_LISTESI, genel_toplam_ekle=True, kagit="A4")
 
     wb.save(output)
+    output.seek(0)
     return output.getvalue()
 
 
@@ -1279,16 +1384,40 @@ else:
 
                         st.divider()
 
-                        # EXCEL İNDİRME BUTONU (İstediğin Gibi Tablonun Altında!)
-                        excel_matris_bytes = generate_sube_siparis_excel(tarih_str, df_wide)
-                        st.download_button(
-                            label="📥 Bu Matris Tablosunu Excel Olarak İndir (Yazdırmaya Hazır)",
-                            data=excel_matris_bytes,
-                            file_name=f"Sube_Stok_Siparis_Matrisi_{tarih_str}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            type="primary",
-                            use_container_width=True
-                        )
+                        st.markdown("#### 📄 Rapor ve Yazdırma Merkezi")
+                        st.caption("A3 seçeneği tüm şubeleri tek sayfada; A4 Büyük Yazı seçeneği şubeleri iki ayrı çalışma sayfasında daha okunaklı hazırlar.")
+
+                        excel_duzenleme = generate_sube_siparis_excel(tarih_str, df_wide, "standart")
+                        excel_a3 = generate_sube_siparis_excel(tarih_str, df_wide, "a3")
+                        excel_a4 = generate_sube_siparis_excel(tarih_str, df_wide, "a4_bolunmus")
+
+                        rapor_col1, rapor_col2, rapor_col3 = st.columns(3)
+                        with rapor_col1:
+                            st.download_button(
+                                label="📊 Excel İndir (Düzenleme)",
+                                data=excel_duzenleme,
+                                file_name=f"Sube_Stok_Siparis_Duzenleme_{tarih_str}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True
+                            )
+                        with rapor_col2:
+                            st.download_button(
+                                label="🖨️ A3 Yazdırma Exceli",
+                                data=excel_a3,
+                                file_name=f"Sube_Stok_Siparis_A3_{tarih_str}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                type="primary",
+                                use_container_width=True
+                            )
+                        with rapor_col3:
+                            st.download_button(
+                                label="🔎 A4 Büyük Yazı (2 Sayfa)",
+                                data=excel_a4,
+                                file_name=f"Sube_Stok_Siparis_A4_Buyuk_Yazi_{tarih_str}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                type="primary",
+                                use_container_width=True
+                            )
 
                     else:
                         st.info("ℹ️ Aranan kriterlere uygun şube sipariş verisi bulunamadı.")
