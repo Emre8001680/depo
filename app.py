@@ -1093,7 +1093,7 @@ else:
                             row_data = {"urun_kodu": kod, "urun_adi": adi}
                             t_sip_sum = 0
                             stok_adet_list = []
-                            rd_var = False
+                            rd_sayisi = 0
 
                             for s_name in SUBE_LISTESI:
                                 match_item = df_res[(df_res['urun_kodu'] == kod) & (df_res['sube'] == s_name)]
@@ -1105,21 +1105,22 @@ else:
                                     t_sip_sum += sip
                                     
                                     if stk == "Reyon Dolu":
-                                        rd_var = True
+                                        rd_sayisi += 1
                                     else:
                                         try:
                                             stok_adet_list.append(float(stk))
-                                        except ValueError:
+                                        except (ValueError, TypeError):
                                             pass
                                 else:
                                     row_data[f"{s_name}_stok"] = "-"
                                     row_data[f"{s_name}_sip"] = "-"
 
                             row_data["toplam_sip"] = t_sip_sum
-                            if rd_var:
-                                row_data["toplam_stok"] = "Reyon Dolu"
+                            toplam_stok = int(sum(stok_adet_list)) if stok_adet_list else 0
+                            if rd_sayisi > 0:
+                                row_data["toplam_stok"] = f"{toplam_stok} Kasa (+{rd_sayisi} RD)"
                             else:
-                                row_data["toplam_stok"] = f"{int(sum(stok_adet_list))} Kasa" if stok_adet_list else "0"
+                                row_data["toplam_stok"] = f"{toplam_stok} Kasa"
 
                             matrix_rows.append(row_data)
 
