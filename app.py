@@ -1,4 +1,4 @@
-# SÜRÜM: 25.07.2026-R2
+# SÜRÜM: 25.07.2026-R3-ARAMA-KORUMALI
 import io
 import base64
 import hashlib
@@ -654,41 +654,108 @@ else:
                 arama = st.text_input("🔍 **Ürün Ara (Adı veya Kodu):**", "")
                 filtre_df = df[df['ADI'].str.contains(arama, case=False) | df['KODU'].str.contains(arama, case=False)] if arama else df
 
-                kaydedilecek_veriler = []
+                # Kayıt listesi yalnızca arama sonucunda görünen ürünlerden oluşturulursa,
+                # görünmeyen mevcut siparişler yanlışlıkla silinir. Bu nedenle önce
+                # veritabanındaki tüm kayıtları temel alıyor, sonra ekrandaki/taslaktaki
+                # değişiklikleri ürün koduna göre üzerine yazıyoruz.
+                kaydedilecek_dict = {}
+                urun_adi_dict = {u["KODU"]: u["ADI"] for u in URUNLER}
+                widget_prefix = f"siparis_{secilen_sube}_{bugun_str}"
+
+                for kod, degerler in kayitli_dict.items():
+                    stok_kayit = degerler.get("stok", "0")
+                    siparis_miktari = float(degerler.get("siparis", 0.0) or 0.0)
+                    if stok_kayit != "0" or siparis_miktari > 0:
+                        kaydedilecek_dict[kod] = {
+                            "sube": secilen_sube,
+                            "tarih": bugun_str,
+                            "urun_kodu": kod,
+                            "urun_adi": urun_adi_dict.get(kod, ""),
+                            "mevcut_stok": stok_kayit,
+                            "siparis_miktari": siparis_miktari
+                        }
+
+                # Daha önce ekranda değiştirilmiş fakat henüz kaydedilmemiş ürünleri de
+                # arama filtresi değişse bile taslaktan koru.
+                for urun in URUNLER:
+                    kod = urun["KODU"]
+                    dolu_key = f"{widget_prefix}_dolu_{kod}"
+                    stok_key = f"{widget_prefix}_stok_{kod}"
+                    sip_key = f"{widget_prefix}_sip_{kod}"
+                    if dolu_key in st.session_state or stok_key in st.session_state or sip_key in st.session_state:
+                        stok_dolu_taslak = bool(st.session_state.get(dolu_key, False))
+                        if stok_dolu_taslak:
+                            stok_taslak = "Reyon Dolu"
+                        else:
+                            stok_taslak = str(int(float(st.session_state.get(stok_key, 0.0) or 0.0)))
+                        sip_taslak = float(st.session_state.get(sip_key, 0.0) or 0.0)
+                        if stok_taslak != "0" or sip_taslak > 0:
+                            kaydedilecek_dict[kod] = {
+                                "sube": secilen_sube,
+                                "tarih": bugun_str,
+                                "urun_kodu": kod,
+                                "urun_adi": urun["ADI"],
+                                "mevcut_stok": stok_taslak,
+                                "siparis_miktari": sip_taslak
+                            }
+                        else:
+                            kaydedilecek_dict.pop(kod, None)
+
                 st.subheader("📦 Stok ve Sipariş Girişi (Kasa)")
+                if arama:
+                    st.caption("🔒 Arama açıkken kaydettiğinizde ekranda görünmeyen mevcut siparişler korunur.")
 
                 for index, row in filtre_df.iterrows():
                     kod = row['KODU']
                     varsayilan_stok_str = kayitli_dict.get(kod, {}).get('stok', "0")
                     varsayilan_siparis = kayitli_dict.get(kod, {}).get('siparis', 0.0)
+                    dolu_key = f"{widget_prefix}_dolu_{kod}"
+                    stok_key = f"{widget_prefix}_stok_{kod}"
+                    sip_key = f"{widget_prefix}_sip_{kod}"
 
                     with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
                         col1, col2 = st.columns([1.5, 1])
                         with col1:
-                            stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
+                            stok_dolu = st.checkbox(
+                                "🟢 Reyon Dolu (Depo Boş)",
+                                value=(varsayilan_stok_str == "Reyon Dolu"),
+                                key=dolu_key
+                            )
                             if not stok_dolu:
                                 try:
                                     def_val = float(varsayilan_stok_str)
                                 except ValueError:
                                     def_val = 0.0
-                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=def_val, key=f"stok_{kod}")
+                                stok_val = st.number_input(
+                                    "Mevcut Stok (Kasa)", min_value=0.0, step=1.0,
+                                    value=def_val, key=stok_key
+                                )
                                 stok_kayit = str(int(stok_val))
                             else:
                                 stok_kayit = "Reyon Dolu"
                                 st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
 
                         with col2:
-                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}")
-                            
+                            siparis = st.number_input(
+                                "Sipariş (Kasa)", min_value=0.0, step=1.0,
+                                value=float(varsayilan_siparis), key=sip_key
+                            )
+
                         if stok_kayit != "0" or siparis > 0:
-                            kaydedilecek_veriler.append({
+                            kaydedilecek_dict[kod] = {
                                 "sube": secilen_sube,
                                 "tarih": bugun_str,
                                 "urun_kodu": kod,
                                 "urun_adi": row['ADI'],
                                 "mevcut_stok": stok_kayit,
                                 "siparis_miktari": float(siparis)
-                            })
+                            }
+                        else:
+                            # Kullanıcı görünen bir ürünün stok ve siparişini sıfırladıysa
+                            # yalnızca o ürün kayıttan çıkarılır; diğer ürünler korunur.
+                            kaydedilecek_dict.pop(kod, None)
+
+                kaydedilecek_veriler = list(kaydedilecek_dict.values())
 
                 st.divider()
                 btn_col1, btn_col2 = st.columns([2, 1])
