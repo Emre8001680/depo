@@ -110,7 +110,11 @@ SUBE_SIFRELERI = {
 HAL_SIFRESI = st.secrets.get("HAL_PASSWORD", "2024")
 YONETICI_SIFRESI = st.secrets.get("ADMIN_PASSWORD", "1234")
 
-
+# Türkiye saati ve şube sipariş kapanış zamanı.
+# Streamlit secrets üzerinden ORDER_CUTOFF_HOUR / ORDER_CUTOFF_MINUTE ile değiştirilebilir.
+ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
+SIPARIS_KAPANIS_SAATI = int(st.secrets.get("ORDER_CUTOFF_HOUR", 11))
+SIPARIS_KAPANIS_DAKIKASI = int(st.secrets.get("ORDER_CUTOFF_MINUTE", 0))
 
 URUNLER = [
     {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
