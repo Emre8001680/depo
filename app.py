@@ -1781,7 +1781,13 @@ else:
                     gosterilecek = [c for c in ["islem_zamani", "kullanici", "rol", "sube", "islem", "urun_kodu", "urun_adi", "eski_deger", "yeni_deger", "detay"] if c in df_log.columns]
                     df_log = df_log[gosterilecek]
                     if "islem_zamani" in df_log.columns:
-                        df_log["islem_zamani"] = pd.to_datetime(df_log["islem_zamani"], errors="coerce").dt.strftime("%d.%m.%Y %H:%M:%S")
+                        # Supabase timestamptz değerlerini UTC olarak döndürebilir.
+                        # Önce UTC olarak yorumlayıp ardından Türkiye saatine çeviriyoruz.
+                        df_log["islem_zamani"] = (
+                            pd.to_datetime(df_log["islem_zamani"], errors="coerce", utc=True)
+                            .dt.tz_convert("Europe/Istanbul")
+                            .dt.strftime("%d.%m.%Y %H:%M:%S")
+                        )
                     df_log = df_log.rename(columns={
                         "islem_zamani":"İşlem Zamanı", "kullanici":"Kullanıcı", "rol":"Rol", "sube":"Şube",
                         "islem":"İşlem", "urun_kodu":"Ürün Kodu", "urun_adi":"Ürün Adı",
