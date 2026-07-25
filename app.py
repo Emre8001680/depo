@@ -107,8 +107,13 @@ SUBE_SIFRELERI = {
     "Aşiyan": "1010", "Zeytinlik": "1011"
 }
 
-HAL_SIFRESI = st.secrets.get("HAL_PASSWORD", "2024")
-YONETICI_SIFRESI = st.secrets.get("ADMIN_PASSWORD", "1234")
+HAL_SIFRESI = st.secrets.get("HAL_PASSWORD")
+YONETICI_SIFRESI = st.secrets.get("ADMIN_PASSWORD")
+
+# Canlı ortamda yönetici şifrelerinin mutlaka Streamlit Secrets üzerinden gelmesi gerekir.
+if not HAL_SIFRESI or not YONETICI_SIFRESI:
+    st.error("Sistem güvenlik ayarları eksik: HAL_PASSWORD ve ADMIN_PASSWORD tanımlanmalıdır.")
+    st.stop()
 
 # Türkiye saati.
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
@@ -244,6 +249,31 @@ def guvenli_sorgu(islem_adi, fn):
         return None
 
 
+def guvenli_veri_oku(islem_adi, fn, varsayilan=None):
+    """Okuma sorgusu başarısız olursa sayfanın tamamen çökmesini önler."""
+    try:
+        return fn()
+    except Exception:
+        st.error(f"❌ {islem_adi} sırasında veri alınamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.")
+        return [] if varsayilan is None else varsayilan
+
+
+def siparis_oturumunu_temizle(sube, tarih):
+    """Sipariş silindikten sonra eski taslak ve widget değerlerini oturumdan kaldırır."""
+    onekler = (
+        f"siparis_taslak_{sube}_{tarih}",
+        f"siparis_snapshot_{sube}_{tarih}",
+        f"urun_arama_{sube}_{tarih}",
+        f"dolu_{sube}_{tarih}_",
+        f"stok_{sube}_{tarih}_",
+        f"sip_{sube}_{tarih}_",
+        f"iptal_onay_{sube}",
+    )
+    for anahtar in list(st.session_state.keys()):
+        if any(anahtar == onek or anahtar.startswith(onek) for onek in onekler):
+            del st.session_state[anahtar]
+
+
 def tum_oturumlari_kapat():
     st.session_state.site_giris_yapildi = False
     st.session_state.giris_yapilan_sube = None
@@ -356,7 +386,10 @@ def generate_toplu_hal_excel(tarih_sorgu_str):
     ws1.page_setup.fitToWidth = 1
     ws1.page_setup.fitToHeight = 0
     
-    res = supabase.table("hal_dagitim").select("sube, urun_kodu, urun_adi, dağıtılan_miktar").eq("tarih", tarih_sorgu_str).execute()
+    try:
+        res = supabase.table("hal_dagitim").select("sube, urun_kodu, urun_adi, dağıtılan_miktar").eq("tarih", tarih_sorgu_str).execute()
+    except Exception:
+        return None
     if not res.data:
         return None
 
@@ -619,9 +652,12 @@ else:
                 st.divider()
 
                 with st.expander(f"🚛 **{secilen_sube} - Halden Şubemize Ayrılan/Gelen Mal Miktarları (Bugün)**", expanded=True):
-                    hal_res = supabase.table("hal_dagitim").select("urun_kodu, urun_adi, dağıtılan_miktar").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
-                    if hal_res.data:
-                        hal_df = pd.DataFrame(hal_res.data)
+                    hal_verileri = guvenli_veri_oku(
+                        "Hal dağıtım bilgilerini okuma",
+                        lambda: supabase.table("hal_dagitim").select("urun_kodu, urun_adi, dağıtılan_miktar").eq("sube", secilen_sube).eq("tarih", bugun_str).execute().data or []
+                    )
+                    if hal_verileri:
+                        hal_df = pd.DataFrame(hal_verileri)
                         hal_df['dağıtılan_miktar'] = pd.to_numeric(hal_df['dağıtılan_miktar'], errors='coerce').fillna(0)
                         hal_df = hal_df[hal_df['dağıtılan_miktar'] > 0]
                         if not hal_df.empty:
@@ -634,12 +670,15 @@ else:
 
                 st.divider()
 
-                res = supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                siparis_verileri = guvenli_veri_oku(
+                    "Şube siparişlerini okuma",
+                    lambda: supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute().data or []
+                )
                 siparis_snapshot_key = f"siparis_snapshot_{secilen_sube}_{bugun_str}"
                 if siparis_snapshot_key not in st.session_state:
-                    st.session_state[siparis_snapshot_key] = kayit_ozeti(res.data or [])
+                    st.session_state[siparis_snapshot_key] = kayit_ozeti(siparis_verileri)
                 kayitli_dict = {}
-                for r in res.data:
+                for r in siparis_verileri:
                     try:
                         sip_val = float(r['siparis_miktari']) if r['siparis_miktari'] is not None else 0.0
                     except (ValueError, TypeError):
@@ -783,11 +822,13 @@ else:
                     if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=not iptal_onayi):
                         sonuc = guvenli_sorgu(
                             "Sipariş iptali",
-                            lambda: supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                            lambda: sube_siparisini_degistir(
+                                secilen_sube, bugun_str, [], st.session_state.get(siparis_snapshot_key)
+                            )
                         )
-                        if sonuc is not None:
-                            st.error("🗑️ Bugünkü sipariş tamamen silindi!")
-                            st.session_state[siparis_snapshot_key] = kayit_ozeti([])
+                        if sonuc:
+                            siparis_oturumunu_temizle(secilen_sube, bugun_str)
+                            st.success("🗑️ Bugünkü sipariş tamamen silindi.")
                             st.rerun()
 
     # 2. HAL DAĞITIM PANELİ
@@ -816,7 +857,7 @@ else:
                 hal_tarih_str = secilen_hal_tarihi.strftime('%Y-%m-%d')
             with t_col2:
                 st.write("") 
-                if secilen_hal_tarihi == date.today():
+                if secilen_hal_tarihi == simdi_tr().date():
                     st.info("🟢 **Bugünün** verileri ve dağıtım listesi görüntüleniyor.")
                 else:
                     st.warning(f"🟡 **{secilen_hal_tarihi.strftime('%d.%m.%Y')}** tarihine ait dağıtım verileri görüntüleniyor.")
@@ -844,9 +885,13 @@ else:
             secilen_urun_kod = secilen_urun_combo.split("(")[-1].replace(")", "").strip()
             secilen_urun_ad = secilen_urun_combo.split("(")[0].strip()
 
-            hal_mevcut = supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
+            hal_mevcut = guvenli_veri_oku(
+                "Hal dağıtım kaydını okuma",
+                lambda: supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
+            )
             hal_snapshot_key = f"hal_snapshot_{hal_tarih_str}_{secilen_urun_kod}"
-            st.session_state[hal_snapshot_key] = kayit_ozeti(hal_mevcut)
+            if hal_snapshot_key not in st.session_state:
+                st.session_state[hal_snapshot_key] = kayit_ozeti(hal_mevcut)
 
             # Hal dağıtım alanları ürün ve tarih bazında ayrı taslaklarda tutulur.
             # Ürün değiştirilmeden hemen önce mevcut widget değerleri taslağa alınır;
@@ -1217,7 +1262,12 @@ else:
                     f"{silme_tarihi.strftime('%d.%m.%Y')} tarihli verilerin kalıcı silinmesini onaylıyorum",
                     key="kalici_sil_onayi"
                 )
-                if st.button("🔥 SEÇİLEN TARİHİN VERİLERİNİ KALICI OLARAK SİL", type="primary", disabled=not kalici_sil_onayi):
+                silme_metni = st.text_input(
+                    "Onaylamak için SİL yazın:",
+                    key="kalici_sil_yazi_onayi"
+                )
+                silme_hazir = kalici_sil_onayi and silme_metni.strip().upper() == "SİL"
+                if st.button("🔥 SEÇİLEN TARİHİN VERİLERİNİ KALICI OLARAK SİL", type="primary", disabled=not silme_hazir):
                     try:
                         if d_secim in ["Şube Siparişleri Tablosu", "Her İki Tabloyu da Temizle"]:
                             supabase.table("siparisler").delete().eq("tarih", silme_tarih_str).execute()
