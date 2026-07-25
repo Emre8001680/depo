@@ -779,6 +779,124 @@ def generate_sube_siparis_excel(tarih_sorgu_str, df_wide, format_tipi="standart"
     return output.getvalue()
 
 
+def generate_tum_veri_yedegi():
+    """Siparişler ve hal dağıtım tablolarının tamamını tek Excel dosyasında yedekler."""
+    try:
+        siparis_data = supabase.table("siparisler").select("*").order("tarih").execute().data or []
+        hal_data = supabase.table("hal_dagitim").select("*").order("tarih").execute().data or []
+    except Exception as exc:
+        raise RuntimeError(f"Yedek verileri Supabase'den alınamadı: {exc}") from exc
+
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws_bilgi = wb.active
+    ws_bilgi.title = "Yedek Bilgisi"
+
+    baslik_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    alt_fill = PatternFill(start_color="D9EAF7", end_color="D9EAF7", fill_type="solid")
+    beyaz_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+    kalin_font = Font(name="Calibri", size=11, bold=True)
+    normal_font = Font(name="Calibri", size=10)
+    thin = Side(border_style="thin", color="B7B7B7")
+    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+
+    yedek_zamani = simdi_tr()
+    ws_bilgi.merge_cells("A1:D1")
+    ws_bilgi["A1"] = "YALÇIN MARKETLER ZİNCİRİ - MANAV PORTALI VERİ YEDEĞİ"
+    ws_bilgi["A1"].font = Font(name="Calibri", size=15, bold=True, color="FFFFFF")
+    ws_bilgi["A1"].fill = baslik_fill
+    ws_bilgi["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_bilgi.row_dimensions[1].height = 28
+
+    bilgiler = [
+        ("Yedek Tarihi", yedek_zamani.strftime("%d.%m.%Y")),
+        ("Yedek Saati", yedek_zamani.strftime("%H:%M:%S")),
+        ("Sipariş Kayıt Sayısı", len(siparis_data)),
+        ("Hal Dağıtım Kayıt Sayısı", len(hal_data)),
+        ("Toplam Kayıt", len(siparis_data) + len(hal_data)),
+    ]
+    for satir, (etiket, deger) in enumerate(bilgiler, start=3):
+        ws_bilgi.cell(satir, 1, etiket).font = kalin_font
+        ws_bilgi.cell(satir, 1).fill = alt_fill
+        ws_bilgi.cell(satir, 1).border = border
+        ws_bilgi.cell(satir, 2, deger).font = normal_font
+        ws_bilgi.cell(satir, 2).border = border
+
+    ws_bilgi["A10"] = "Önemli"
+    ws_bilgi["A10"].font = kalin_font
+    ws_bilgi["A11"] = "Bu dosyayı değiştirmeden güvenli bir klasörde saklayın. Geri yükleme gerektiğinde bu yedek kullanılabilir."
+    ws_bilgi.merge_cells("A11:D12")
+    ws_bilgi["A11"].alignment = Alignment(wrap_text=True, vertical="top")
+    ws_bilgi.column_dimensions["A"].width = 28
+    ws_bilgi.column_dimensions["B"].width = 24
+    ws_bilgi.column_dimensions["C"].width = 18
+    ws_bilgi.column_dimensions["D"].width = 18
+
+    def tablo_sayfasi_ekle(sayfa_adi, kayitlar, tercih_edilen_sutunlar):
+        ws = wb.create_sheet(title=sayfa_adi)
+        if kayitlar:
+            mevcut_sutunlar = []
+            for sutun in tercih_edilen_sutunlar:
+                if any(sutun in kayit for kayit in kayitlar):
+                    mevcut_sutunlar.append(sutun)
+            for kayit in kayitlar:
+                for sutun in kayit.keys():
+                    if sutun not in mevcut_sutunlar:
+                        mevcut_sutunlar.append(sutun)
+        else:
+            mevcut_sutunlar = tercih_edilen_sutunlar
+
+        for col, sutun in enumerate(mevcut_sutunlar, start=1):
+            hucre = ws.cell(1, col, sutun)
+            hucre.font = beyaz_font
+            hucre.fill = baslik_fill
+            hucre.alignment = Alignment(horizontal="center", vertical="center")
+            hucre.border = border
+
+        for row, kayit in enumerate(kayitlar, start=2):
+            for col, sutun in enumerate(mevcut_sutunlar, start=1):
+                deger = kayit.get(sutun)
+                if isinstance(deger, (dict, list)):
+                    deger = json.dumps(deger, ensure_ascii=False, default=str)
+                hucre = ws.cell(row, col, deger)
+                hucre.font = normal_font
+                hucre.border = border
+                hucre.alignment = Alignment(vertical="center")
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        ws.sheet_view.showGridLines = False
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+
+        for col, sutun in enumerate(mevcut_sutunlar, start=1):
+            max_uzunluk = len(str(sutun))
+            for row in range(2, min(ws.max_row, 500) + 1):
+                value = ws.cell(row, col).value
+                if value is not None:
+                    max_uzunluk = max(max_uzunluk, len(str(value)))
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = min(max(max_uzunluk + 2, 12), 38)
+
+        if not kayitlar:
+            ws.cell(2, 1, "Bu tabloda henüz kayıt bulunmuyor.")
+
+    tablo_sayfasi_ekle(
+        "Siparişler",
+        siparis_data,
+        ["id", "sube", "tarih", "urun_kodu", "urun_adi", "mevcut_stok", "siparis_miktari", "created_at"],
+    )
+    tablo_sayfasi_ekle(
+        "Hal Dağıtımı",
+        hal_data,
+        ["id", "sube", "tarih", "urun_kodu", "urun_adi", "dağıtılan_miktar", "created_at"],
+    )
+
+    wb.save(output)
+    return output.getvalue(), len(siparis_data), len(hal_data), yedek_zamani
+
+
 # KARŞILAMA EKRANI
 if not st.session_state.site_giris_yapildi:
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1494,6 +1612,29 @@ else:
 
             # SEKME 3: GEÇMİŞ VERİLERİ SİLME / TEMİZLEME YÖNETİMİ
             with tab_yonetim:
+                st.subheader("💾 Sistem Yedeği")
+                st.caption("Siparişler ve hal dağıtım kayıtlarının tamamını tek Excel dosyası olarak indirir.")
+
+                try:
+                    yedek_bytes, siparis_yedek_sayisi, hal_yedek_sayisi, yedek_zamani = generate_tum_veri_yedegi()
+                    yedek_dosya_adi = f"YalcinMarket_Tam_Yedek_{yedek_zamani.strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+                    y1, y2, y3 = st.columns(3)
+                    y1.metric("Şube Sipariş Kayıtları", f"{siparis_yedek_sayisi:,}".replace(",", "."))
+                    y2.metric("Hal Dağıtım Kayıtları", f"{hal_yedek_sayisi:,}".replace(",", "."))
+                    y3.metric("Toplam Kayıt", f"{siparis_yedek_sayisi + hal_yedek_sayisi:,}".replace(",", "."))
+                    st.download_button(
+                        label="💾 TÜM VERİLERİ TEK EXCEL DOSYASI OLARAK YEDEKLE",
+                        data=yedek_bytes,
+                        file_name=yedek_dosya_adi,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        use_container_width=True,
+                    )
+                    st.caption(f"Yedek hazırlanma zamanı: {yedek_zamani.strftime('%d.%m.%Y %H:%M:%S')}")
+                except Exception as e:
+                    st.error(f"❌ Yedek hazırlanamadı: {e}")
+
+                st.divider()
                 st.subheader("🗑️ Geçmiş Veri ve Kayıt Temizleme Paneli")
                 st.warning("⚠️ Bu ekrandan seçtiğiniz tarihe ait verileri tamamen silebilirsiniz. Bu işlem geri alınamaz!")
 
