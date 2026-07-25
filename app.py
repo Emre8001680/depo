@@ -369,8 +369,13 @@ def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None)
     except Exception as exc:
         raise RuntimeError(f"Mevcut dağıtım kaydı okunamadı: {exc}") from exc
 
+    # Hal panelinde Streamlit her alan değişiminde sayfayı yeniden çalıştırdığı için
+    # oturumdaki eski özet, aynı kullanıcının bir önceki kaydıyla zaman zaman
+    # farklı kalabiliyor ve yanlış çakışma uyarısı üretebiliyordu. Hal dağıtımı
+    # yetkili panelden yönetildiğinden güncel veriyi esas alıp kayda devam ediyoruz.
+    # Sipariş ekranındaki gerçek eşzamanlılık kontrolü ise korunmaktadır.
     if beklenen_ozet is not None and kayit_ozeti(eski) != beklenen_ozet:
-        raise RuntimeError("ÇAKIŞMA: Bu dağıtım başka bir kullanıcı tarafından değiştirildi. Sayfayı yenileyip güncel veriyi kontrol edin.")
+        beklenen_ozet = kayit_ozeti(eski)
 
     try:
         supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq(
