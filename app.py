@@ -1,6 +1,9 @@
 import io
 import base64
-from datetime import datetime, date
+import hashlib
+import json
+from datetime import datetime, date, time
+from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 import openpyxl
@@ -107,6 +110,12 @@ SUBE_SIFRELERI = {
 HAL_SIFRESI = st.secrets.get("HAL_PASSWORD", "2024")
 YONETICI_SIFRESI = st.secrets.get("ADMIN_PASSWORD", "1234")
 
+# Türkiye saati ve şube sipariş kapanış zamanı.
+# Streamlit secrets üzerinden ORDER_CUTOFF_HOUR / ORDER_CUTOFF_MINUTE ile değiştirilebilir.
+ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
+SIPARIS_KAPANIS_SAATI = int(st.secrets.get("ORDER_CUTOFF_HOUR", 11))
+SIPARIS_KAPANIS_DAKIKASI = int(st.secrets.get("ORDER_CUTOFF_MINUTE", 0))
+
 URUNLER = [
     {"KODU": "053016", "ADI": "MNV.ACI DOLMALIK"}, {"KODU": "09857", "ADI": "MNV.ALA KARPUZ"},
     {"KODU": "00015264", "ADI": "MNV.ANANAS"}, {"KODU": "08385", "ADI": "MNV.ARMUT"},
@@ -165,6 +174,37 @@ if "admin_authed" not in st.session_state:
     st.session_state.admin_authed = False
 
 
+def simdi_tr():
+    """Sunucu hangi ülkede olursa olsun Türkiye saatini döndürür."""
+    return datetime.now(ISTANBUL_TZ)
+
+
+def siparis_girisi_acik_mi():
+    """Şube sipariş girişinin bugün için açık olup olmadığını döndürür."""
+    simdi = simdi_tr()
+    kapanis = datetime.combine(simdi.date(), time(SIPARIS_KAPANIS_SAATI, SIPARIS_KAPANIS_DAKIKASI), tzinfo=ISTANBUL_TZ)
+    return simdi <= kapanis, kapanis
+
+
+def kayit_ozeti(kayitlar):
+    """Kayıt listesini kararlı biçimde özetleyerek eşzamanlı değişiklik kontrolü sağlar."""
+    normalize = []
+    for kayit in kayitlar or []:
+        normalize.append({k: kayit.get(k) for k in sorted(kayit.keys())})
+    normalize.sort(key=lambda x: json.dumps(x, ensure_ascii=False, sort_keys=True, default=str))
+    payload = json.dumps(normalize, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def baglanti_kontrolu():
+    """Supabase bağlantısını hafif bir sorguyla kontrol eder."""
+    try:
+        supabase.table("siparisler").select("urun_kodu").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
 def guvenli_sorgu(islem_adi, fn):
     """Supabase işlemlerini kullanıcı dostu hata yönetimiyle çalıştırır."""
     try:
@@ -182,9 +222,11 @@ def tum_oturumlari_kapat():
     st.session_state.admin_authed = False
 
 
-def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar):
-    """Aynı tarih/ürün için mükerrer kayıt oluşmasını önler; hata halinde eski veriyi geri yükler."""
+def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar, beklenen_ozet=None):
+    """Aynı tarih/ürün için mükerrer kayıt ve eşzamanlı veri ezilmesini önler."""
     eski = supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute().data or []
+    if beklenen_ozet is not None and kayit_ozeti(eski) != beklenen_ozet:
+        raise RuntimeError("ÇAKIŞMA: Bu dağıtım başka bir kullanıcı tarafından değiştirildi. Sayfayı yenileyip güncel veriyi kontrol edin.")
     try:
         supabase.table("hal_dagitim").delete().eq("tarih", tarih).eq("urun_kodu", urun_kodu).execute()
         if yeni_kayitlar:
@@ -199,9 +241,11 @@ def hal_dagitimini_degistir(tarih, urun_kodu, yeni_kayitlar):
             raise
 
 
-def sube_siparisini_degistir(sube, tarih, yeni_kayitlar):
-    """Şube siparişini günceller; ekleme başarısız olursa eski kayıtları geri yükler."""
+def sube_siparisini_degistir(sube, tarih, yeni_kayitlar, beklenen_ozet=None):
+    """Şube siparişini günceller; çakışma veya hata halinde veri kaybını engeller."""
     eski = supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", sube).eq("tarih", tarih).execute().data or []
+    if beklenen_ozet is not None and kayit_ozeti(eski) != beklenen_ozet:
+        raise RuntimeError("ÇAKIŞMA: Bu sipariş başka bir kullanıcı tarafından değiştirildi. Sayfayı yenileyip güncel veriyi kontrol edin.")
     try:
         supabase.table("siparisler").delete().eq("sube", sube).eq("tarih", tarih).execute()
         if yeni_kayitlar:
@@ -476,7 +520,7 @@ if not st.session_state.site_giris_yapildi:
                 </div>
             ''', unsafe_allow_html=True)
         except Exception:
-            pass
+            st.caption("ℹ️ Logo dosyası bulunamadı; sistem çalışmaya devam ediyor.")
 
         st.markdown('<div class="welcome-title">YALÇIN MARKETLER ZİNCİRİ</div>', unsafe_allow_html=True)
         st.markdown('<div class="welcome-sub">Manav Sipariş ve Stok Yönetim Portalı</div>', unsafe_allow_html=True)
@@ -506,13 +550,19 @@ else:
             st.rerun()
 
     st.divider()
+    baglanti_var = baglanti_kontrolu()
+    if baglanti_var:
+        st.caption("🟢 Veri bağlantısı aktif")
+    else:
+        st.error("🔴 Veri bağlantısı kurulamadı. Girdiğiniz alanlar bu sayfa açık kaldığı sürece korunur; bağlantı geldikten sonra tekrar kaydedin.")
     rol = st.session_state.aktif_rol
 
     # 1. ŞUBE SİPARİŞ GİRİŞİ
     if rol == "🏬 Şube Girişi":
         st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
-        bugun_str = datetime.now().strftime('%Y-%m-%d')
-        st.caption(f"Tarih: {datetime.now().strftime('%d.%m.%Y')}")
+        bugun_str = simdi_tr().strftime('%Y-%m-%d')
+        st.caption(f"Tarih: {simdi_tr().strftime('%d.%m.%Y')}")
+        siparis_acik, kapanis_zamani = siparis_girisi_acik_mi()
 
         subeler = ["-- Seçiniz --"] + SUBE_LISTESI
         secilen_sube = st.selectbox("📍 **Lütfen Şubenizi Seçin:**", subeler)
@@ -534,6 +584,10 @@ else:
                             st.error("❌ Hatalı Şube Şifresi!")
             else:
                 st.success(f"🔓 **{secilen_sube}** Şubesi Girişi Aktif")
+                if siparis_acik:
+                    st.info(f"⏰ Bugünkü sipariş girişi {kapanis_zamani.strftime('%H:%M')} saatine kadar açıktır.")
+                else:
+                    st.error(f"⛔ Bugünkü sipariş girişi {kapanis_zamani.strftime('%H:%M')} itibarıyla kapanmıştır. Mevcut kayıtlar görüntülenebilir ancak değiştirilemez.")
                 if st.button("🔒 Şube Oturumunu Kapat", type="secondary"):
                     st.session_state.giris_yapilan_sube = None
                     st.rerun()
@@ -556,7 +610,10 @@ else:
 
                 st.divider()
 
-                res = supabase.table("siparisler").select("urun_kodu, mevcut_stok, siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                res = supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
+                siparis_snapshot_key = f"siparis_snapshot_{secilen_sube}_{bugun_str}"
+                if siparis_snapshot_key not in st.session_state:
+                    st.session_state[siparis_snapshot_key] = kayit_ozeti(res.data or [])
                 kayitli_dict = {}
                 for r in res.data:
                     try:
@@ -583,20 +640,20 @@ else:
                     with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
                         col1, col2 = st.columns([1.5, 1])
                         with col1:
-                            stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}")
+                            stok_dolu = st.checkbox("🟢 Reyon Dolu (Depo Boş)", value=(varsayilan_stok_str == "Reyon Dolu"), key=f"dolu_{kod}", disabled=not siparis_acik)
                             if not stok_dolu:
                                 try:
                                     def_val = float(varsayilan_stok_str)
                                 except ValueError:
                                     def_val = 0.0
-                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=def_val, key=f"stok_{kod}")
+                                stok_val = st.number_input("Mevcut Stok (Kasa)", min_value=0.0, step=1.0, value=def_val, key=f"stok_{kod}", disabled=not siparis_acik)
                                 stok_kayit = str(int(stok_val))
                             else:
                                 stok_kayit = "Reyon Dolu"
                                 st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
 
                         with col2:
-                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}")
+                            siparis = st.number_input("Sipariş (Kasa)", min_value=0.0, step=1.0, value=float(varsayilan_siparis), key=f"sip_{kod}", disabled=not siparis_acik)
                             
                         if stok_kayit != "0" or siparis > 0:
                             kaydedilecek_veriler.append({
@@ -611,27 +668,30 @@ else:
                 st.divider()
                 btn_col1, btn_col2 = st.columns([2, 1])
                 with btn_col1:
-                    if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
+                    if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True, disabled=not siparis_acik):
                         with st.spinner("Sipariş güvenli şekilde kaydediliyor..."):
                             sonuc = guvenli_sorgu(
                                 "Sipariş kaydetme",
-                                lambda: sube_siparisini_degistir(secilen_sube, bugun_str, kaydedilecek_veriler)
+                                lambda: sube_siparisini_degistir(secilen_sube, bugun_str, kaydedilecek_veriler, st.session_state.get(siparis_snapshot_key))
                             )
                         if sonuc:
                             if kaydedilecek_veriler:
                                 st.success(f"✅ **{secilen_sube}** şubesinin siparişi başarıyla kaydedildi!")
+                                st.session_state[siparis_snapshot_key] = kayit_ozeti(kaydedilecek_veriler)
                             else:
                                 st.warning("⚠️ Tüm değerler 0 olduğu için bugünkü sipariş temizlendi.")
+                                st.session_state[siparis_snapshot_key] = kayit_ozeti([])
                             st.rerun()
                 with btn_col2:
                     iptal_onayi = st.checkbox("Sipariş iptalini onaylıyorum", key=f"iptal_onay_{secilen_sube}")
-                    if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=not iptal_onayi):
+                    if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=(not iptal_onayi) or (not siparis_acik)):
                         sonuc = guvenli_sorgu(
                             "Sipariş iptali",
                             lambda: supabase.table("siparisler").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute()
                         )
                         if sonuc is not None:
                             st.error("🗑️ Bugünkü sipariş tamamen silindi!")
+                            st.session_state[siparis_snapshot_key] = kayit_ozeti([])
                             st.rerun()
 
     # 2. HAL DAĞITIM PANELİ
@@ -656,7 +716,7 @@ else:
             st.markdown("#### 📅 Sevkiyat ve Dağıtım Tarihi Seçimi")
             t_col1, t_col2 = st.columns([2, 5])
             with t_col1:
-                secilen_hal_tarihi = st.date_input("İşlem Yapmak İstediğiniz Tarih:", value=date.today())
+                secilen_hal_tarihi = st.date_input("İşlem Yapmak İstediğiniz Tarih:", value=simdi_tr().date())
                 hal_tarih_str = secilen_hal_tarihi.strftime('%Y-%m-%d')
             with t_col2:
                 st.write("") 
@@ -666,7 +726,7 @@ else:
                     st.warning(f"🟡 **{secilen_hal_tarihi.strftime('%d.%m.%Y')}** tarihine ait dağıtım verileri görüntüleniyor.")
 
             st.divider()
-            is_today = (secilen_hal_tarihi == date.today())
+            is_today = (secilen_hal_tarihi == simdi_tr().date())
             tarih_label = "BUGÜNÜN" if is_today else f"{secilen_hal_tarihi.strftime('%d.%m.%Y')} TARİHLİ"
 
             toplu_excel_bytes = generate_toplu_hal_excel(hal_tarih_str)
@@ -687,6 +747,11 @@ else:
             secilen_urun_combo = st.selectbox("🛒 **Halden Alınan Ürünü Seçin:**", urun_listesi_adlar)
             secilen_urun_kod = secilen_urun_combo.split("(")[-1].replace(")", "").strip()
             secilen_urun_ad = secilen_urun_combo.split("(")[0].strip()
+
+            hal_mevcut = supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
+            hal_snapshot_key = f"hal_snapshot_{hal_tarih_str}_{secilen_urun_kod}"
+            if hal_snapshot_key not in st.session_state:
+                st.session_state[hal_snapshot_key] = kayit_ozeti(hal_mevcut)
 
             hal_toplam_kasa = st.number_input(f"📦 **Halden Alınan Toplam Miktar ({secilen_urun_ad}):**", min_value=0.0, step=1.0, value=0.0)
 
@@ -735,10 +800,11 @@ else:
                             with st.spinner("Dağıtım kaydı güvenli şekilde güncelleniyor..."):
                                 sonuc = guvenli_sorgu(
                                     "Hal dağıtımı kaydetme",
-                                    lambda: hal_dagitimini_degistir(hal_tarih_str, secilen_urun_kod, kayit_listesi)
+                                    lambda: hal_dagitimini_degistir(hal_tarih_str, secilen_urun_kod, kayit_listesi, st.session_state.get(hal_snapshot_key))
                                 )
                             if sonuc:
                                 st.success(f"✅ **{secilen_urun_ad}** dağıtımı kaydedildi/güncellendi!")
+                                st.session_state[hal_snapshot_key] = kayit_ozeti(kayit_listesi)
                                 st.rerun()
                         else:
                             st.warning("⚠️ Şubelere herhangi bir miktar girilmedi.")
@@ -773,7 +839,7 @@ else:
 
             f_col1, f_col2, f_col3 = st.columns([1.2, 1, 2])
             with f_col1:
-                secilen_tarih = st.date_input("📅 Tarih Seçin", value=date.today())
+                secilen_tarih = st.date_input("📅 Tarih Seçin", value=simdi_tr().date())
                 tarih_str = secilen_tarih.strftime('%Y-%m-%d')
             with f_col2:
                 filtre_sube = st.selectbox("🏬 Şube Filtresi", ["Tümü"] + SUBE_LISTESI)
@@ -947,7 +1013,7 @@ else:
                 st.subheader("🗑️ Geçmiş Veri ve Kayıt Temizleme Paneli")
                 st.warning("⚠️ Bu ekrandan seçtiğiniz tarihe ait verileri tamamen silebilirsiniz. Bu işlem geri alınamaz!")
 
-                silme_tarihi = st.date_input("Silmek İstediğiniz Tarihi Seçin:", value=date.today(), key="del_date_picker")
+                silme_tarihi = st.date_input("Silmek İstediğiniz Tarihi Seçin:", value=simdi_tr().date(), key="del_date_picker")
                 silme_tarih_str = silme_tarihi.strftime('%Y-%m-%d')
 
                 d_secim = st.radio("Hangi Tablodaki Verileri Temizlemek İstiyorsunuz?", ["Şube Siparişleri Tablosu", "Hal Dağıtım Tablosu", "Her İki Tabloyu da Temizle"])
