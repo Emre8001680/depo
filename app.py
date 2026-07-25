@@ -1,4 +1,4 @@
-
+# SÜRÜM: 25.07.2026-R2
 import io
 import base64
 import hashlib
