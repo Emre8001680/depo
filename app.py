@@ -6,6 +6,7 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from supabase import create_client, Client
@@ -860,6 +861,207 @@ def generate_sube_siparis_excel(tarih_sorgu_str, df_wide, format_tipi="standart"
     return output.getvalue()
 
 
+
+def generate_sube_gecmis_siparis_excel(sube, tarih_str, kayitlar):
+    """Tek bir şubenin seçilen tarihteki siparişini A4 yazdırmaya uygun Excel olarak üretir."""
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Siparis_Dokumu"
+    ws.sheet_view.showGridLines = False
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_margins.left = 0.35
+    ws.page_margins.right = 0.35
+    ws.page_margins.top = 0.5
+    ws.page_margins.bottom = 0.5
+    ws.print_title_rows = "1:5"
+
+    thin = Side(border_style="thin", color="B7B7B7")
+    border = Border(top=thin, left=thin, right=thin, bottom=thin)
+    title_fill = PatternFill(start_color="1F6B3A", end_color="1F6B3A", fill_type="solid")
+    header_fill = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+    total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+
+    try:
+        tarih_gosterim = datetime.strptime(tarih_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError:
+        tarih_gosterim = tarih_str
+
+    temiz = []
+    for r in kayitlar or []:
+        try:
+            miktar = float(r.get("siparis_miktari") or 0)
+        except (TypeError, ValueError):
+            miktar = 0.0
+        if miktar > 0:
+            temiz.append({
+                "urun_kodu": str(r.get("urun_kodu") or ""),
+                "urun_adi": str(r.get("urun_adi") or ""),
+                "mevcut_stok": str(r.get("mevcut_stok") or "0"),
+                "siparis_miktari": miktar,
+            })
+
+    toplam_kasa = sum(r["siparis_miktari"] for r in temiz)
+    siparis_no = f"YM-{tarih_str.replace('-', '')}-{SUBE_LISTESI.index(sube)+1:02d}"
+
+    ws.merge_cells("A1:D1")
+    c = ws["A1"]
+    c.value = "YALÇIN MARKETLER ZİNCİRİ - ŞUBE SİPARİŞ DÖKÜMÜ"
+    c.font = Font(name="Calibri", size=15, bold=True, color="FFFFFF")
+    c.fill = title_fill
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 28
+
+    ws.merge_cells("A2:D2")
+    ws["A2"] = f"Şube: {sube}   |   Tarih: {tarih_gosterim}   |   Sipariş No: {siparis_no}"
+    ws["A2"].font = Font(name="Calibri", size=11, bold=True)
+    ws["A2"].alignment = Alignment(horizontal="center")
+
+    ws.merge_cells("A3:D3")
+    ws["A3"] = f"Ürün Çeşidi: {len(temiz)}   |   Toplam Sipariş: {toplam_kasa:g} Kasa   |   Oluşturma: {simdi_tr().strftime('%d.%m.%Y %H:%M')}"
+    ws["A3"].alignment = Alignment(horizontal="center")
+
+    headers = ["Ürün Kodu", "Ürün Adı", "Mevcut Stok", "Sipariş (Kasa)"]
+    for col, text in enumerate(headers, 1):
+        cell = ws.cell(5, col, text)
+        cell.font = Font(name="Calibri", size=10, bold=True)
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    row = 6
+    for item in temiz:
+        values = [item["urun_kodu"], item["urun_adi"], item["mevcut_stok"], item["siparis_miktari"]]
+        for col, value in enumerate(values, 1):
+            cell = ws.cell(row, col, value)
+            cell.border = border
+            cell.alignment = Alignment(horizontal="center" if col != 2 else "left", vertical="center", wrap_text=True)
+        ws.cell(row, 4).number_format = '0.## "Kasa"'
+        row += 1
+
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
+    ws.cell(row, 1, "GENEL TOPLAM")
+    ws.cell(row, 4, toplam_kasa)
+    for col in range(1, 5):
+        cell = ws.cell(row, col)
+        cell.font = Font(name="Calibri", size=10, bold=True)
+        cell.fill = total_fill
+        cell.border = border
+    ws.cell(row, 4).number_format = '0.## "Kasa"'
+
+    ws.column_dimensions["A"].width = 17
+    ws.column_dimensions["B"].width = 38
+    ws.column_dimensions["C"].width = 18
+    ws.column_dimensions["D"].width = 18
+    ws.freeze_panes = "A6"
+    ws.auto_filter.ref = f"A5:D{max(row-1, 5)}"
+    ws.print_area = f"A1:D{row}"
+    ws.oddFooter.left.text = f"{sube} - {tarih_gosterim}"
+    ws.oddFooter.right.text = "Sayfa &P / &N"
+
+    wb.save(output)
+    return output.getvalue(), siparis_no, len(temiz), toplam_kasa
+
+
+def render_sube_gecmis_siparisler(sube):
+    """Şubenin yalnızca kendi geçmiş siparişlerini tarih aralığıyla gösterir."""
+    st.subheader("📑 Geçmiş Siparişlerim")
+    bugun = simdi_tr().date()
+    varsayilan_baslangic = bugun.replace(day=1)
+    f1, f2 = st.columns(2)
+    with f1:
+        baslangic = st.date_input("Başlangıç Tarihi", value=varsayilan_baslangic, max_value=bugun, key=f"gecmis_bas_{sube}")
+    with f2:
+        bitis = st.date_input("Bitiş Tarihi", value=bugun, max_value=bugun, key=f"gecmis_bit_{sube}")
+
+    if baslangic > bitis:
+        st.warning("⚠️ Başlangıç tarihi, bitiş tarihinden sonra olamaz.")
+        return
+
+    kayitlar = guvenli_veri_oku(
+        "Geçmiş siparişleri okuma",
+        lambda: supabase.table("siparisler")
+            .select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari")
+            .eq("sube", sube)
+            .gte("tarih", baslangic.strftime("%Y-%m-%d"))
+            .lte("tarih", bitis.strftime("%Y-%m-%d"))
+            .order("tarih", desc=True)
+            .execute().data or []
+    )
+    if not kayitlar:
+        st.info("ℹ️ Seçilen tarih aralığında kayıtlı sipariş bulunamadı.")
+        return
+
+    df = pd.DataFrame(kayitlar)
+    df["siparis_miktari"] = pd.to_numeric(df["siparis_miktari"], errors="coerce").fillna(0)
+    ozet = (
+        df.groupby("tarih", as_index=False)
+          .agg(Urun_Cesidi=("siparis_miktari", lambda x: int((x > 0).sum())),
+               Toplam_Siparis=("siparis_miktari", "sum"))
+          .sort_values("tarih", ascending=False)
+    )
+    ozet["Tarih"] = pd.to_datetime(ozet["tarih"]).dt.strftime("%d.%m.%Y")
+    ozet["Ürün Çeşidi"] = ozet["Urun_Cesidi"]
+    ozet["Toplam Sipariş"] = ozet["Toplam_Siparis"].map(lambda x: f"{x:g} Kasa")
+    st.dataframe(ozet[["Tarih", "Ürün Çeşidi", "Toplam Sipariş"]], use_container_width=True, hide_index=True)
+
+    tarih_secenekleri = ozet["tarih"].tolist()
+    secili_tarih = st.selectbox(
+        "Detayını görüntülemek istediğiniz sipariş tarihi",
+        tarih_secenekleri,
+        format_func=lambda x: datetime.strptime(x, "%Y-%m-%d").strftime("%d.%m.%Y"),
+        key=f"gecmis_detay_{sube}",
+    )
+    detay = [r for r in kayitlar if str(r.get("tarih")) == secili_tarih]
+    detay_df = pd.DataFrame(detay)
+    detay_df["siparis_miktari"] = pd.to_numeric(detay_df["siparis_miktari"], errors="coerce").fillna(0)
+    detay_df = detay_df[detay_df["siparis_miktari"] > 0].copy()
+    detay_df = detay_df.rename(columns={
+        "urun_kodu": "Ürün Kodu", "urun_adi": "Ürün Adı",
+        "mevcut_stok": "Mevcut Stok", "siparis_miktari": "Sipariş (Kasa)"
+    })
+    excel_bytes, siparis_no, urun_sayisi, toplam_kasa = generate_sube_gecmis_siparis_excel(sube, secili_tarih, detay)
+    st.markdown(f"#### 📄 Sipariş No: `{siparis_no}`")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Şube", sube)
+    m2.metric("Ürün Çeşidi", urun_sayisi)
+    m3.metric("Toplam Sipariş", f"{toplam_kasa:g} Kasa")
+    st.dataframe(detay_df[["Ürün Kodu", "Ürün Adı", "Mevcut Stok", "Sipariş (Kasa)"]], use_container_width=True, hide_index=True)
+
+    d1, d2 = st.columns(2)
+    with d1:
+        st.download_button(
+            "📊 A4 Excel Sipariş Dökümünü İndir",
+            data=excel_bytes,
+            file_name=f"{sube.replace(' ', '_')}_{secili_tarih}_siparis.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with d2:
+        print_rows = "".join(
+            f"<tr><td>{r.get('urun_kodu','')}</td><td>{r.get('urun_adi','')}</td><td>{r.get('mevcut_stok','')}</td><td>{float(r.get('siparis_miktari') or 0):g}</td></tr>"
+            for r in detay if float(r.get("siparis_miktari") or 0) > 0
+        )
+        print_html = f"""
+        <html><head><style>
+        body{{font-family:Arial,sans-serif;padding:12px;color:#111}} h2,h3{{text-align:center;margin:5px}}
+        table{{width:100%;border-collapse:collapse;font-size:12px}} th,td{{border:1px solid #333;padding:6px}}
+        th{{background:#ddebf7}} .ozet{{text-align:center;margin:10px 0;font-weight:bold}}
+        button{{width:100%;padding:10px;font-size:15px;font-weight:bold;cursor:pointer}}
+        @media print{{button{{display:none}} body{{padding:0}}}}
+        </style></head><body>
+        <button onclick="window.print()">🖨 Yazdır / PDF Olarak Kaydet</button>
+        <h2>YALÇIN MARKETLER ZİNCİRİ</h2><h3>ŞUBE SİPARİŞ DÖKÜMÜ</h3>
+        <div class="ozet">Şube: {sube} | Tarih: {datetime.strptime(secili_tarih,'%Y-%m-%d').strftime('%d.%m.%Y')} | Sipariş No: {siparis_no}<br>
+        Ürün Çeşidi: {urun_sayisi} | Toplam Sipariş: {toplam_kasa:g} Kasa</div>
+        <table><thead><tr><th>Ürün Kodu</th><th>Ürün Adı</th><th>Mevcut Stok</th><th>Sipariş</th></tr></thead><tbody>{print_rows}</tbody></table>
+        </body></html>"""
+        components.html(print_html, height=220, scrolling=True)
+
 def generate_tum_veri_yedegi():
     """Siparişler ve hal dağıtım tablolarının tamamını tek Excel dosyasında yedekler."""
     try:
@@ -1060,6 +1262,17 @@ else:
                     st.rerun()
 
                 st.divider()
+
+                sube_bolumu = st.radio(
+                    "Şube İşlemleri",
+                    ["📦 Sipariş Girişi", "📑 Geçmiş Siparişlerim"],
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key=f"sube_bolumu_{secilen_sube}",
+                )
+                if sube_bolumu == "📑 Geçmiş Siparişlerim":
+                    render_sube_gecmis_siparisler(secilen_sube)
+                    st.stop()
 
                 with st.expander(f"🚛 **{secilen_sube} - Halden Şubemize Ayrılan/Gelen Mal Miktarları (Bugün)**", expanded=True):
                     hal_verileri = guvenli_veri_oku(
