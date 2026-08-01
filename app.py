@@ -1689,61 +1689,6 @@ else:
             secilen_urun_kod = secilen_urun_combo.split("(")[-1].replace(")", "").strip()
             secilen_urun_ad = secilen_urun_combo.split("(")[0].strip()
 
-            # Satın alma görevlisi, seçilen ürüne ait şube notlarını dağıtım
-            # ekranından ayrılmadan görebilir. Genel sipariş notları da aynı
-            # tarih için ayrı bölümde gösterilir.
-            satin_alma_notlari = guvenli_veri_oku(
-                "Şube sipariş notlarını okuma",
-                lambda: supabase.table("siparis_notlari")
-                    .select("sube,tarih,urun_kodu,urun_notu,genel_not")
-                    .eq("tarih", hal_tarih_str)
-                    .execute().data or [],
-                varsayilan=[],
-            )
-            urun_notlari = [
-                n for n in satin_alma_notlari
-                if str(n.get("urun_kodu") or "") == secilen_urun_kod
-                and str(n.get("urun_notu") or "").strip()
-            ]
-            genel_notlar = []
-            gorulen_genel_notlar = set()
-            for n in satin_alma_notlari:
-                genel_not = str(n.get("genel_not") or "").strip()
-                anahtar = (str(n.get("sube") or ""), genel_not)
-                if genel_not and anahtar not in gorulen_genel_notlar:
-                    gorulen_genel_notlar.add(anahtar)
-                    genel_notlar.append({"sube": n.get("sube"), "genel_not": genel_not})
-
-            not_sayisi = len(urun_notlari)
-            genel_not_sayisi = len(genel_notlar)
-            with st.expander(
-                f"📝 Şube Notları — {not_sayisi} ürün notu, {genel_not_sayisi} genel not",
-                expanded=bool(not_sayisi or genel_not_sayisi),
-            ):
-                if urun_notlari:
-                    st.markdown(f"#### 🛒 {secilen_urun_ad} için ürün notları")
-                    urun_not_df = pd.DataFrame([
-                        {
-                            "Şube": n.get("sube", ""),
-                            "Ürün Notu": str(n.get("urun_notu") or "").strip(),
-                        }
-                        for n in urun_notlari
-                    ])
-                    st.dataframe(urun_not_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info(f"ℹ️ {secilen_urun_ad} için şubelerden ürün notu girilmemiş.")
-
-                if genel_notlar:
-                    st.markdown("#### 📌 Şubelerin genel sipariş notları")
-                    genel_not_df = pd.DataFrame([
-                        {
-                            "Şube": n.get("sube", ""),
-                            "Genel Sipariş Notu": str(n.get("genel_not") or "").strip(),
-                        }
-                        for n in genel_notlar
-                    ])
-                    st.dataframe(genel_not_df, use_container_width=True, hide_index=True)
-
             hal_mevcut = guvenli_veri_oku(
                 "Hal dağıtım kaydını okuma",
                 lambda: supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
@@ -2060,6 +2005,33 @@ else:
 
                         st.subheader("📊 Şube Bazlı Stok ve Sipariş Matrisi")
 
+                        # Seçilen tarihe ait ürün ve genel sipariş notlarını oku.
+                        # Notlar doğrudan bu matriste gösterilir; satın alma görevlisinin
+                        # Hal Dağıtım Paneli'ne geçmesine gerek kalmaz.
+                        merkez_not_kayitlari = guvenli_veri_oku(
+                            "Merkez sipariş notlarını okuma",
+                            lambda: supabase.table("siparis_notlari")
+                                .select("sube,tarih,urun_kodu,urun_notu,genel_not")
+                                .eq("tarih", tarih_str)
+                                .execute().data or [],
+                            varsayilan=[],
+                        )
+
+                        urun_not_haritasi = {}
+                        genel_not_haritasi = {}
+                        for not_kaydi in merkez_not_kayitlari:
+                            not_sube = str(not_kaydi.get("sube") or "").strip()
+                            not_kodu = str(not_kaydi.get("urun_kodu") or "").strip()
+                            urun_notu = str(not_kaydi.get("urun_notu") or "").strip()
+                            genel_not = str(not_kaydi.get("genel_not") or "").strip()
+                            if not_kodu and urun_notu:
+                                urun_not_haritasi.setdefault(not_kodu, []).append({
+                                    "Şube": not_sube,
+                                    "Ürün Notu": urun_notu,
+                                })
+                            if not_sube and genel_not:
+                                genel_not_haritasi[not_sube] = genel_not
+
                         # Geniş matris verisini üretelim
                         unique_urunler = df_res[['urun_kodu', 'urun_adi']].drop_duplicates().values
                         matrix_rows = []
@@ -2091,6 +2063,8 @@ else:
                                     row_data[f"{s_name}_sip"] = "-"
 
                             row_data["toplam_sip"] = t_sip_sum
+                            not_adedi = len(urun_not_haritasi.get(str(kod), []))
+                            row_data["notlar"] = f"🟡 {not_adedi} Not" if not_adedi else "-"
                             toplam_stok = int(sum(stok_adet_list)) if stok_adet_list else 0
                             if rd_sayisi > 0:
                                 row_data["toplam_stok"] = f"{toplam_stok} Kasa (+{rd_sayisi} RD)"
@@ -2108,6 +2082,7 @@ else:
                             columns_tuples.append((s_name, "Sip."))
                         columns_tuples.append(("GENEL TOPLAM", "Top. Stok / RD"))
                         columns_tuples.append(("GENEL TOPLAM", "Top. Sipariş"))
+                        columns_tuples.append(("📝 NOTLAR", "Adet"))
 
                         df_display = pd.DataFrame()
                         df_display[("Ürün Kodu", "")] = df_wide["urun_kodu"]
@@ -2119,9 +2094,50 @@ else:
 
                         df_display[("GENEL TOPLAM", "Top. Stok / RD")] = df_wide["toplam_stok"]
                         df_display[("GENEL TOPLAM", "Top. Sipariş")] = df_wide["toplam_sip"]
+                        df_display[("📝 NOTLAR", "Adet")] = df_wide["notlar"]
 
                         df_display.columns = pd.MultiIndex.from_tuples(columns_tuples)
                         st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+                        notlu_urunler = [
+                            (str(kod), str(adi))
+                            for kod, adi in unique_urunler
+                            if urun_not_haritasi.get(str(kod))
+                        ]
+                        toplam_urun_notu = sum(len(v) for v in urun_not_haritasi.values())
+                        toplam_genel_not = len(genel_not_haritasi)
+
+                        with st.expander(
+                            f"📝 Şube Sipariş Notları — {toplam_urun_notu} ürün notu, {toplam_genel_not} genel not",
+                            expanded=bool(toplam_urun_notu or toplam_genel_not),
+                        ):
+                            if notlu_urunler:
+                                not_urun_secimi = st.selectbox(
+                                    "Notlarını görmek istediğiniz ürünü seçin",
+                                    options=[f"{adi} ({kod})" for kod, adi in notlu_urunler],
+                                    key=f"merkez_not_urun_{tarih_str}",
+                                )
+                                not_urun_kodu = not_urun_secimi.rsplit("(", 1)[-1].rstrip(")").strip()
+                                secilen_notlar = urun_not_haritasi.get(not_urun_kodu, [])
+                                if secilen_notlar:
+                                    st.dataframe(
+                                        pd.DataFrame(secilen_notlar),
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+                            else:
+                                st.info("ℹ️ Seçilen tarihte ürün bazlı şube notu bulunmuyor.")
+
+                            if genel_not_haritasi:
+                                st.markdown("#### 📌 Şubelerin Genel Sipariş Notları")
+                                st.dataframe(
+                                    pd.DataFrame([
+                                        {"Şube": sube_adi, "Genel Sipariş Notu": not_metni}
+                                        for sube_adi, not_metni in genel_not_haritasi.items()
+                                    ]),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
 
                         st.divider()
 
