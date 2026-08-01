@@ -418,6 +418,8 @@ def siparis_oturumunu_temizle(sube, tarih):
         f"dolu_{sube}_{tarih}_",
         f"stok_{sube}_{tarih}_",
         f"sip_{sube}_{tarih}_",
+        f"urun_not_{sube}_{tarih}_",
+        f"genel_siparis_notu_{sube}_{tarih}",
         f"iptal_onay_{sube}",
     )
     for anahtar in list(st.session_state.keys()):
@@ -862,7 +864,76 @@ def generate_sube_siparis_excel(tarih_sorgu_str, df_wide, format_tipi="standart"
 
 
 
-def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
+def siparis_notlarini_oku(sube, baslangic_tarihi, bitis_tarihi=None):
+    """Şube sipariş notlarını güvenli şekilde okur."""
+    bitis_tarihi = bitis_tarihi or baslangic_tarihi
+    return guvenli_veri_oku(
+        "Sipariş notlarını okuma",
+        lambda: supabase.table("siparis_notlari")
+            .select("sube,tarih,urun_kodu,urun_notu,genel_not")
+            .eq("sube", sube)
+            .gte("tarih", str(baslangic_tarihi))
+            .lte("tarih", str(bitis_tarihi))
+            .execute().data or [],
+        varsayilan=[],
+    )
+
+
+def siparis_notlarini_kaydet(sube, tarih, urun_notlari, genel_not):
+    """Ürün ve genel sipariş notlarını tarih/şube bazında yeniler."""
+    mevcut = supabase.table("siparis_notlari").select("*").eq("sube", sube).eq("tarih", tarih).execute().data or []
+    try:
+        supabase.table("siparis_notlari").delete().eq("sube", sube).eq("tarih", tarih).execute()
+        yeni = []
+        temiz_genel_not = str(genel_not or "").strip()
+        for urun_kodu, urun_notu in (urun_notlari or {}).items():
+            temiz_not = str(urun_notu or "").strip()
+            if temiz_not:
+                yeni.append({
+                    "sube": sube,
+                    "tarih": tarih,
+                    "urun_kodu": str(urun_kodu),
+                    "urun_notu": temiz_not,
+                    "genel_not": temiz_genel_not,
+                })
+        # Ürün notu yoksa genel notu özel bir satırda sakla.
+        if temiz_genel_not and not yeni:
+            yeni.append({
+                "sube": sube,
+                "tarih": tarih,
+                "urun_kodu": "__GENEL__",
+                "urun_notu": "",
+                "genel_not": temiz_genel_not,
+            })
+        if yeni:
+            supabase.table("siparis_notlari").insert(yeni).execute()
+        return True
+    except Exception:
+        try:
+            supabase.table("siparis_notlari").delete().eq("sube", sube).eq("tarih", tarih).execute()
+            if mevcut:
+                supabase.table("siparis_notlari").insert(mevcut).execute()
+        finally:
+            raise
+
+
+def notlari_kayitlara_ekle(kayitlar, not_kayitlari):
+    """Not kayıtlarını sipariş satırlarına birleştirir ve genel notu döndürür."""
+    not_map = {}
+    genel_not = ""
+    for n in not_kayitlari or []:
+        kod = str(n.get("urun_kodu") or "")
+        if kod and kod != "__GENEL__":
+            not_map[kod] = str(n.get("urun_notu") or "")
+        if not genel_not and str(n.get("genel_not") or "").strip():
+            genel_not = str(n.get("genel_not") or "").strip()
+    birlesik = []
+    for kayit in kayitlar or []:
+        kod = str(kayit.get("urun_kodu") or "")
+        birlesik.append({**kayit, "urun_notu": not_map.get(kod, "")})
+    return birlesik, genel_not
+
+def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar, genel_not=""):
     """Tek bir şubenin seçilen tarihli siparişini A4'e uygun Excel olarak üretir."""
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -902,7 +973,7 @@ def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
     toplam_kasa = sum(r["siparis_miktari"] for r in temiz)
     siparis_no = f"YM-{tarih_str.replace('-', '')}-{SUBE_LISTESI.index(sube)+1:02d}" if sube in SUBE_LISTESI else f"YM-{tarih_str.replace('-', '')}"
 
-    ws.merge_cells("A1:D1")
+    ws.merge_cells("A1:E1")
     c = ws["A1"]
     c.value = "YALÇIN MARKETLER ZİNCİRİ - ŞUBE SİPARİŞ DÖKÜMÜ"
     c.font = Font(name="Calibri", size=15, bold=True, color="FFFFFF")
@@ -917,9 +988,9 @@ def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
     for i, (etiket, deger) in enumerate(bilgi, start=2):
         ws.cell(i, 1, etiket).font = Font(bold=True)
         ws.cell(i, 2, deger)
-        ws.merge_cells(start_row=i, start_column=2, end_row=i, end_column=4)
+        ws.merge_cells(start_row=i, start_column=2, end_row=i, end_column=5)
 
-    headers = ["Ürün Kodu", "Ürün Adı", "Mevcut Stok", "Sipariş (Kasa)"]
+    headers = ["Ürün Kodu", "Ürün Adı", "Mevcut Stok", "Sipariş (Kasa)", "Ürün Notu"]
     for col, header in enumerate(headers, start=1):
         cell = ws.cell(7, col, header)
         cell.font = Font(bold=True)
@@ -929,18 +1000,18 @@ def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
 
     row = 8
     for r in sorted(temiz, key=lambda x: str(x.get("urun_adi", ""))):
-        values = [r.get("urun_kodu", ""), r.get("urun_adi", ""), r.get("mevcut_stok", ""), r.get("siparis_miktari", 0)]
+        values = [r.get("urun_kodu", ""), r.get("urun_adi", ""), r.get("mevcut_stok", ""), r.get("siparis_miktari", 0), r.get("urun_notu", "")]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row, col, value)
             cell.border = border
-            cell.alignment = Alignment(horizontal="center" if col != 2 else "left", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(horizontal="center" if col not in (2, 5) else "left", vertical="center", wrap_text=True)
         row += 1
 
     ws.cell(row, 1, "TOPLAM").font = Font(bold=True)
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
-    ws.cell(row, 4, toplam_kasa).font = Font(bold=True)
-    ws.cell(row, 4).number_format = '0.## "Kasa"'
-    for col in range(1, 5):
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+    ws.cell(row, 5, toplam_kasa).font = Font(bold=True)
+    ws.cell(row, 5).number_format = '0.## "Kasa"'
+    for col in range(1, 6):
         ws.cell(row, col).fill = total_fill
         ws.cell(row, col).border = border
     ws.cell(row, 1).alignment = Alignment(horizontal="right")
@@ -948,17 +1019,30 @@ def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
     ws.column_dimensions["A"].width = 16
     ws.column_dimensions["B"].width = 38
     ws.column_dimensions["C"].width = 18
-    ws.column_dimensions["D"].width = 18
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 30
     ws.freeze_panes = "A8"
     ws.print_title_rows = "1:7"
-    ws.print_area = f"A1:D{row}"
+    if str(genel_not or "").strip():
+        row += 2
+        ws.cell(row, 1, "GENEL SİPARİŞ NOTU").font = Font(bold=True)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
+        ws.cell(row, 1).fill = header_fill
+        row += 1
+        ws.cell(row, 1, str(genel_not).strip())
+        ws.merge_cells(start_row=row, start_column=1, end_row=row + 1, end_column=5)
+        ws.cell(row, 1).alignment = Alignment(wrap_text=True, vertical="top")
+        for rr in (row, row + 1):
+            for cc in range(1, 6):
+                ws.cell(rr, cc).border = border
+    ws.print_area = f"A1:E{row + (1 if str(genel_not or '').strip() else 0)}"
     ws.oddFooter.center.text = "Yalçın Marketler Zinciri - Manav Sipariş Portalı"
     ws.oddFooter.right.text = "Sayfa &P / &N"
     wb.save(output)
     return output.getvalue()
 
 
-def generate_sube_siparis_html(sube, tarih_str, kayitlar):
+def generate_sube_siparis_html(sube, tarih_str, kayitlar, genel_not=""):
     """Tarayıcı yazdırma penceresi için güvenli, A4 uyumlu HTML üretir."""
     import html
     try:
@@ -982,6 +1066,7 @@ def generate_sube_siparis_html(sube, tarih_str, kayitlar):
             f"<td>{html.escape(str(r.get('urun_adi', '')))}</td>"
             f"<td>{html.escape(str(r.get('mevcut_stok', '')))}</td>"
             f"<td class='num'>{miktar_text}</td>"
+            f"<td>{html.escape(str(r.get('urun_notu', '')))}</td>"
             "</tr>"
         )
     siparis_no = f"YM-{tarih_str.replace('-', '')}-{SUBE_LISTESI.index(sube)+1:02d}" if sube in SUBE_LISTESI else f"YM-{tarih_str.replace('-', '')}"
@@ -993,12 +1078,13 @@ button{{background:#1f6b3a;color:white;border:0;border-radius:7px;padding:11px 1
 .sheet{{max-width:820px;margin:auto;padding:12px}} h2{{text-align:center;margin:4px 0 14px}}
 .meta{{display:grid;grid-template-columns:145px 1fr;gap:5px 10px;margin-bottom:14px}} .meta b{{background:#eef5ee;padding:5px}}
 table{{width:100%;border-collapse:collapse;font-size:12px}} th,td{{border:1px solid #777;padding:6px}} th{{background:#ddebf7}} .num{{text-align:center}}
-tfoot td{{font-weight:bold;background:#fff2cc}} @media print{{.toolbar{{display:none}} .sheet{{padding:0}} @page{{size:A4 portrait;margin:12mm}}}}
+tfoot td{{font-weight:bold;background:#fff2cc}} .general-note{{margin-top:14px;border:1px solid #777;padding:10px;background:#fffbe6;white-space:pre-wrap}} @media print{{.toolbar{{display:none}} .sheet{{padding:0}} @page{{size:A4 portrait;margin:12mm}}}}
 </style></head><body><div class='sheet'><div class='toolbar'><button onclick='window.print()'>🖨️ YAZDIR / PDF OLARAK KAYDET</button></div>
 <h2>YALÇIN MARKETLER ZİNCİRİ<br>ŞUBE SİPARİŞ DÖKÜMÜ</h2>
 <div class='meta'><b>Şube</b><span>{html.escape(sube)}</span><b>Sipariş Tarihi</b><span>{html.escape(gorunen_tarih)}</span><b>Sipariş No</b><span>{html.escape(siparis_no)}</span></div>
-<table><thead><tr><th>Ürün Kodu</th><th>Ürün Adı</th><th>Mevcut Stok</th><th>Sipariş (Kasa)</th></tr></thead><tbody>{''.join(satirlar)}</tbody>
-<tfoot><tr><td colspan='3' style='text-align:right'>TOPLAM</td><td class='num'>{toplam:g} Kasa</td></tr></tfoot></table></div></body></html>
+<table><thead><tr><th>Ürün Kodu</th><th>Ürün Adı</th><th>Mevcut Stok</th><th>Sipariş (Kasa)</th><th>Ürün Notu</th></tr></thead><tbody>{''.join(satirlar)}</tbody>
+<tfoot><tr><td colspan='4' style='text-align:right'>TOPLAM</td><td class='num'>{toplam:g} Kasa</td></tr></tfoot></table>
+{f"<div class='general-note'><b>Genel Sipariş Notu</b><br>{html.escape(str(genel_not).strip())}</div>" if str(genel_not or '').strip() else ''}</div></body></html>
 """
 
 def generate_tum_veri_yedegi():
@@ -1225,6 +1311,15 @@ else:
                     "Şube siparişlerini okuma",
                     lambda: supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute().data or []
                 )
+                bugun_not_kayitlari = siparis_notlarini_oku(secilen_sube, bugun_str)
+                bugun_urun_notlari = {
+                    str(n.get("urun_kodu")): str(n.get("urun_notu") or "")
+                    for n in bugun_not_kayitlari if str(n.get("urun_kodu") or "") != "__GENEL__"
+                }
+                bugun_genel_not = next(
+                    (str(n.get("genel_not") or "") for n in bugun_not_kayitlari if str(n.get("genel_not") or "").strip()),
+                    "",
+                )
                 siparis_snapshot_key = f"siparis_snapshot_{secilen_sube}_{bugun_str}"
                 if siparis_snapshot_key not in st.session_state:
                     st.session_state[siparis_snapshot_key] = kayit_ozeti(siparis_verileri)
@@ -1248,6 +1343,7 @@ else:
                             "urun_adi": u["ADI"],
                             "stok": kayitli_dict.get(u["KODU"], {}).get("stok", "0"),
                             "siparis": float(kayitli_dict.get(u["KODU"], {}).get("siparis", 0.0)),
+                            "not": bugun_urun_notlari.get(u["KODU"], ""),
                         }
                         for u in URUNLER
                     }
@@ -1274,7 +1370,7 @@ else:
                     kod = row["KODU"]
                     urun_taslagi = siparis_taslagi.setdefault(
                         kod,
-                        {"urun_adi": row["ADI"], "stok": "0", "siparis": 0.0},
+                        {"urun_adi": row["ADI"], "stok": "0", "siparis": 0.0, "not": ""},
                     )
                     varsayilan_stok_str = str(urun_taslagi.get("stok", "0"))
                     varsayilan_siparis = float(urun_taslagi.get("siparis", 0.0) or 0.0)
@@ -1320,16 +1416,37 @@ else:
                                 step=1.0,
                                 key=sip_key,
                             )
+                        not_key = f"urun_not_{secilen_sube}_{bugun_str}_{kod}"
+                        if not_key not in st.session_state:
+                            st.session_state[not_key] = str(urun_taslagi.get("not", "") or "")
+                        urun_notu = st.text_input(
+                            "📝 Ürün Notu (isteğe bağlı)",
+                            max_chars=150,
+                            placeholder="Örn: Biraz sert olsun, yeşil gelsin...",
+                            key=not_key,
+                        )
 
                     # Görünen ürünün son değerlerini tam taslağa işle.
                     siparis_taslagi[kod] = {
                         "urun_adi": row["ADI"],
                         "stok": stok_kayit,
                         "siparis": float(siparis),
+                        "not": str(urun_notu or "").strip(),
                     }
+
+                genel_not_key = f"genel_siparis_notu_{secilen_sube}_{bugun_str}"
+                if genel_not_key not in st.session_state:
+                    st.session_state[genel_not_key] = bugun_genel_not
+                genel_siparis_notu = st.text_area(
+                    "📝 Genel Sipariş Notu (isteğe bağlı)",
+                    max_chars=500,
+                    placeholder="Siparişin tamamı için açıklama yazabilirsiniz...",
+                    key=genel_not_key,
+                )
 
                 # Arama sonucu görünmeyen ürünler dahil tüm taslaktan kayıt listesi üret.
                 kaydedilecek_veriler = []
+                kaydedilecek_urun_notlari = {}
                 for urun in URUNLER:
                     kod = urun["KODU"]
                     veri = siparis_taslagi.get(
@@ -1340,6 +1457,10 @@ else:
                         siparis_miktari = float(veri.get("siparis", 0.0) or 0.0)
                     except (TypeError, ValueError):
                         siparis_miktari = 0.0
+
+                    urun_notu = str(veri.get("not", "") or "").strip()
+                    if urun_notu:
+                        kaydedilecek_urun_notlari[kod] = urun_notu
 
                     if stok_kayit != "0" or siparis_miktari > 0:
                         kaydedilecek_veriler.append({
@@ -1361,6 +1482,14 @@ else:
                                 lambda: sube_siparisini_degistir(secilen_sube, bugun_str, kaydedilecek_veriler, st.session_state.get(siparis_snapshot_key), kullanici=secilen_sube)
                             )
                         if sonuc:
+                            not_sonucu = guvenli_sorgu(
+                                "Sipariş notlarını kaydetme",
+                                lambda: siparis_notlarini_kaydet(
+                                    secilen_sube, bugun_str, kaydedilecek_urun_notlari, genel_siparis_notu
+                                ),
+                            )
+                            if not_sonucu is None:
+                                st.warning("⚠️ Sipariş kaydedildi ancak notlar kaydedilemedi. Supabase'de siparis_notlari tablosunu kontrol edin.")
                             if kaydedilecek_veriler:
                                 st.success(f"✅ **{secilen_sube}** şubesinin siparişi başarıyla kaydedildi!")
                                 st.session_state[siparis_snapshot_key] = kayit_ozeti(kaydedilecek_veriler)
@@ -1391,6 +1520,10 @@ else:
                             )
                         )
                         if sonuc:
+                            guvenli_sorgu(
+                                "Sipariş notlarını silme",
+                                lambda: supabase.table("siparis_notlari").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute(),
+                            )
                             siparis_oturumunu_temizle(secilen_sube, bugun_str)
                             st.success("🗑️ Bugünkü sipariş tamamen silindi.")
                             st.rerun()
@@ -1430,6 +1563,15 @@ else:
                             .execute().data or [],
                     )
 
+                    gecmis_notlar = siparis_notlarini_oku(
+                        secilen_sube,
+                        baslangic_tarihi.strftime("%Y-%m-%d"),
+                        bitis_tarihi.strftime("%Y-%m-%d"),
+                    )
+                    notlar_tarih_map = {}
+                    for n in gecmis_notlar:
+                        notlar_tarih_map.setdefault(str(n.get("tarih")), []).append(n)
+
                     tarih_gruplari = {}
                     for kayit in gecmis_veriler:
                         try:
@@ -1459,15 +1601,23 @@ else:
                             format_func=lambda x: datetime.strptime(x, "%Y-%m-%d").strftime("%d.%m.%Y"),
                             key=f"gecmis_tarih_sec_{secilen_sube}",
                         )
-                        detay_kayitlari = tarih_gruplari[secilen_gecmis_tarih]
-                        detay_df = pd.DataFrame(detay_kayitlari)[["urun_kodu", "urun_adi", "mevcut_stok", "siparis_miktari"]]
+                        detay_kayitlari, detay_genel_not = notlari_kayitlara_ekle(
+                            tarih_gruplari[secilen_gecmis_tarih],
+                            notlar_tarih_map.get(secilen_gecmis_tarih, []),
+                        )
+                        detay_df = pd.DataFrame(detay_kayitlari)[["urun_kodu", "urun_adi", "mevcut_stok", "siparis_miktari", "urun_notu"]]
                         detay_df = detay_df.rename(columns={
                             "urun_kodu": "Ürün Kodu", "urun_adi": "Ürün Adı",
                             "mevcut_stok": "Mevcut Stok", "siparis_miktari": "Sipariş (Kasa)",
+                            "urun_notu": "Ürün Notu",
                         })
                         st.dataframe(detay_df, use_container_width=True, hide_index=True)
+                        if detay_genel_not:
+                            st.info(f"📝 **Genel Sipariş Notu:** {detay_genel_not}")
 
-                        excel_bytes = generate_sube_tek_siparis_excel(secilen_sube, secilen_gecmis_tarih, detay_kayitlari)
+                        excel_bytes = generate_sube_tek_siparis_excel(
+                            secilen_sube, secilen_gecmis_tarih, detay_kayitlari, detay_genel_not
+                        )
                         d_col1, d_col2 = st.columns(2)
                         with d_col1:
                             st.download_button(
@@ -1482,7 +1632,7 @@ else:
                         with d_col2:
                             st.info("Aşağıdaki yeşil butona basınca yazdırma ekranı açılır. Yazıcı seçebilir veya **PDF olarak kaydet** seçeneğini kullanabilirsiniz.")
 
-                        yazdir_html = generate_sube_siparis_html(secilen_sube, secilen_gecmis_tarih, detay_kayitlari)
+                        yazdir_html = generate_sube_siparis_html(secilen_sube, secilen_gecmis_tarih, detay_kayitlari, detay_genel_not)
                         components.html(yazdir_html, height=650, scrolling=True)
 
     # 2. HAL DAĞITIM PANELİ
