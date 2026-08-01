@@ -1689,6 +1689,61 @@ else:
             secilen_urun_kod = secilen_urun_combo.split("(")[-1].replace(")", "").strip()
             secilen_urun_ad = secilen_urun_combo.split("(")[0].strip()
 
+            # Satın alma görevlisi, seçilen ürüne ait şube notlarını dağıtım
+            # ekranından ayrılmadan görebilir. Genel sipariş notları da aynı
+            # tarih için ayrı bölümde gösterilir.
+            satin_alma_notlari = guvenli_veri_oku(
+                "Şube sipariş notlarını okuma",
+                lambda: supabase.table("siparis_notlari")
+                    .select("sube,tarih,urun_kodu,urun_notu,genel_not")
+                    .eq("tarih", hal_tarih_str)
+                    .execute().data or [],
+                varsayilan=[],
+            )
+            urun_notlari = [
+                n for n in satin_alma_notlari
+                if str(n.get("urun_kodu") or "") == secilen_urun_kod
+                and str(n.get("urun_notu") or "").strip()
+            ]
+            genel_notlar = []
+            gorulen_genel_notlar = set()
+            for n in satin_alma_notlari:
+                genel_not = str(n.get("genel_not") or "").strip()
+                anahtar = (str(n.get("sube") or ""), genel_not)
+                if genel_not and anahtar not in gorulen_genel_notlar:
+                    gorulen_genel_notlar.add(anahtar)
+                    genel_notlar.append({"sube": n.get("sube"), "genel_not": genel_not})
+
+            not_sayisi = len(urun_notlari)
+            genel_not_sayisi = len(genel_notlar)
+            with st.expander(
+                f"📝 Şube Notları — {not_sayisi} ürün notu, {genel_not_sayisi} genel not",
+                expanded=bool(not_sayisi or genel_not_sayisi),
+            ):
+                if urun_notlari:
+                    st.markdown(f"#### 🛒 {secilen_urun_ad} için ürün notları")
+                    urun_not_df = pd.DataFrame([
+                        {
+                            "Şube": n.get("sube", ""),
+                            "Ürün Notu": str(n.get("urun_notu") or "").strip(),
+                        }
+                        for n in urun_notlari
+                    ])
+                    st.dataframe(urun_not_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"ℹ️ {secilen_urun_ad} için şubelerden ürün notu girilmemiş.")
+
+                if genel_notlar:
+                    st.markdown("#### 📌 Şubelerin genel sipariş notları")
+                    genel_not_df = pd.DataFrame([
+                        {
+                            "Şube": n.get("sube", ""),
+                            "Genel Sipariş Notu": str(n.get("genel_not") or "").strip(),
+                        }
+                        for n in genel_notlar
+                    ])
+                    st.dataframe(genel_not_df, use_container_width=True, hide_index=True)
+
             hal_mevcut = guvenli_veri_oku(
                 "Hal dağıtım kaydını okuma",
                 lambda: supabase.table("hal_dagitim").select("sube,tarih,urun_kodu,urun_adi,dağıtılan_miktar").eq("tarih", hal_tarih_str).eq("urun_kodu", secilen_urun_kod).execute().data or []
