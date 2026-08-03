@@ -96,13 +96,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 SUBE_LISTESI = [
-    "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadirli Yolu", 
+    "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadiri Yolu", 
     "Nahır Yolu", "Eyup Sultan", "Bulvar", "Düziçi Çarşı", "Aşiyan", "Zeytinlik"
 ]
 
 SUBE_SIFRELERI = {
     "Raufbey": "1001", "Metin Tamer": "1002", "Hacı Osmanlı": "1003",
-    "Salı Yolu": "1004", "Kadirli Yolu": "1005", "Nahır Yolu": "1006",
+    "Salı Yolu": "1004", "Kadiri Yolu": "1005", "Nahır Yolu": "1006",
     "Eyup Sultan": "1007", "Bulvar": "1008", "Düziçi Çarşı": "1009",
     "Aşiyan": "1010", "Zeytinlik": "1011"
 }
@@ -862,6 +862,141 @@ def generate_sube_siparis_excel(tarih_sorgu_str, df_wide, format_tipi="standart"
     output.seek(0)
     return output.getvalue()
 
+
+
+# A4 DİKEY - EN FAZLA 2 SAYFA - KOMPAKT STOK/SİPARİŞ RAPORU
+# Şube sırası, onaylanan örnek dosyadaki sırayla sabittir.
+def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Dikey_2_Sayfa"
+    ws.sheet_view.showGridLines = False
+
+    # Kullanıcının onayladığı çıktıdaki şube sırası.
+    sube_sirasi = [
+        ("Aşiyan", "Aşiyan"),
+        ("Metin Tamer", "Metin T."),
+        ("Hacı Osmanlı", "Hacı O."),
+        ("Salı Yolu", "Salı Y."),
+        ("Bulvar", "Bulvar"),
+        ("Düziçi Çarşı", "Düziçi"),
+        ("Kadiri Yolu", "Kadirli"),
+        ("Zeytinlik", "Zeytinlik"),
+        ("Raufbey", "Rauf."),
+        ("Eyup Sultan", "Eyüp S."),
+        ("Nahır Yolu", "Nahır Y."),
+    ]
+
+    ince = Side(border_style="thin", color="C8C8C8")
+    kenarlik = Border(top=ince, left=ince, right=ince, bottom=ince)
+    baslik_dolgu = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+    toplam_dolgu = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    zebra_dolgu = PatternFill(start_color="F7FBF7", end_color="F7FBF7", fill_type="solid")
+    baslik_font = Font(name="Calibri", size=7, bold=True)
+    normal_font = Font(name="Calibri", size=7)
+    toplam_font = Font(name="Calibri", size=7, bold=True)
+
+    def temiz_stok(deger):
+        if deger is None:
+            return "-"
+        metin = str(deger).strip()
+        if not metin or metin == "-":
+            return "-"
+        if metin.lower() == "reyon dolu":
+            return "RD"
+        try:
+            sayi = float(metin)
+            return str(int(sayi)) if sayi.is_integer() else f"{sayi:g}"
+        except (TypeError, ValueError):
+            return metin
+
+    def temiz_siparis(deger):
+        if deger is None or str(deger).strip() in ("", "-"):
+            return "-"
+        try:
+            sayi = float(deger)
+            if sayi == 0:
+                return "-"
+            return str(int(sayi)) if sayi.is_integer() else f"{sayi:g}"
+        except (TypeError, ValueError):
+            return str(deger).strip()
+
+    def kompakt_toplam_stok(deger):
+        metin = str(deger or "-").strip()
+        metin = metin.replace(" Kasa", "")
+        metin = metin.replace(" (+", "+").replace(" RD)", "RD")
+        return metin or "-"
+
+    headers = ["Ürün Adı"] + [kisa for _, kisa in sube_sirasi] + ["Top. Stok/RD", "Top. Sip."]
+    ws.append(headers)
+
+    for col_idx, baslik in enumerate(headers, start=1):
+        hucre = ws.cell(row=1, column=col_idx, value=baslik)
+        hucre.font = baslik_font
+        hucre.fill = toplam_dolgu if col_idx >= 13 else baslik_dolgu
+        hucre.border = kenarlik
+        hucre.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 24
+
+    for sira, (_, row) in enumerate(df_wide.iterrows(), start=1):
+        satir = [str(row.get("urun_adi", ""))]
+        for sube_adi, _ in sube_sirasi:
+            stok = temiz_stok(row.get(f"{sube_adi}_stok", "-"))
+            siparis = temiz_siparis(row.get(f"{sube_adi}_sip", "-"))
+            satir.append(f"{stok}/{siparis}")
+        satir.extend([
+            kompakt_toplam_stok(row.get("toplam_stok", "-")),
+            temiz_siparis(row.get("toplam_sip", 0)),
+        ])
+        ws.append(satir)
+        excel_satir = ws.max_row
+        for col_idx in range(1, 15):
+            hucre = ws.cell(row=excel_satir, column=col_idx)
+            hucre.font = toplam_font if col_idx >= 13 else normal_font
+            hucre.fill = toplam_dolgu if col_idx >= 13 else (zebra_dolgu if sira % 2 == 0 else PatternFill(fill_type=None))
+            hucre.border = kenarlik
+            hucre.alignment = Alignment(
+                horizontal="left" if col_idx == 1 else "center",
+                vertical="center",
+                wrap_text=(col_idx == 1),
+            )
+        ws.row_dimensions[excel_satir].height = 15
+
+    # Örnek dosyadaki dar ve okunabilir sütun düzeni.
+    ws.column_dimensions["A"].width = 22
+    for col in range(2, 13):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 5.6
+    ws.column_dimensions["M"].width = 8.5
+    ws.column_dimensions["N"].width = 7.5
+
+    # A4 dikey, genişlik tek sayfa; uzunluk en fazla iki sayfa.
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 2
+    ws.page_margins.left = 0.15
+    ws.page_margins.right = 0.15
+    ws.page_margins.top = 0.25
+    ws.page_margins.bottom = 0.25
+    ws.page_margins.header = 0.10
+    ws.page_margins.footer = 0.10
+    ws.print_title_rows = "1:1"
+    ws.print_area = f"A1:N{ws.max_row}"
+    ws.oddFooter.left.text = f"Tarih: {tarih_sorgu_str}"
+    ws.oddFooter.center.text = "RD = Reyon Dolu | Hücre: Stok/Sipariş"
+    ws.oddFooter.right.text = "Sayfa &P / &N"
+    ws.sheet_view.zoomScale = 80
+
+    # Ürünleri mümkün olduğunca eşit biçimde iki sayfaya ayır.
+    if ws.max_row > 44:
+        orta_satir = 1 + ((ws.max_row - 1 + 1) // 2)
+        ws.row_breaks.append(openpyxl.worksheet.pagebreak.Break(id=orta_satir))
+
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
 
 
 def siparis_notlarini_oku(sube, baslangic_tarihi, bitis_tarihi=None):
@@ -2142,13 +2277,12 @@ else:
                         st.divider()
 
                         st.markdown("#### 📄 Rapor ve Yazdırma Merkezi")
-                        st.caption("A3 seçeneği tüm şubeleri tek sayfada; A4 Büyük Yazı seçeneği şubeleri iki ayrı çalışma sayfasında daha okunaklı hazırlar.")
+                        st.caption("Yazdırma raporu A4 dikey biçimde, en fazla 2 sayfa ve onaylanan şube sırasıyla hazırlanır. Hücreler Stok/Sipariş formatındadır; RD, Reyon Dolu anlamına gelir.")
 
                         excel_duzenleme = generate_sube_siparis_excel(tarih_str, df_wide, "standart")
-                        excel_a3 = generate_sube_siparis_excel(tarih_str, df_wide, "a3")
-                        excel_a4 = generate_sube_siparis_excel(tarih_str, df_wide, "a4_bolunmus")
+                        excel_dikey = generate_sube_siparis_dikey_2_sayfa(tarih_str, df_wide)
 
-                        rapor_col1, rapor_col2, rapor_col3 = st.columns(3)
+                        rapor_col1, rapor_col2 = st.columns(2)
                         with rapor_col1:
                             st.download_button(
                                 label="📊 Excel İndir (Düzenleme)",
@@ -2159,18 +2293,9 @@ else:
                             )
                         with rapor_col2:
                             st.download_button(
-                                label="🖨️ A3 Yazdırma Exceli",
-                                data=excel_a3,
-                                file_name=f"Sube_Stok_Siparis_A3_{tarih_str}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                type="primary",
-                                use_container_width=True
-                            )
-                        with rapor_col3:
-                            st.download_button(
-                                label="🔎 A4 Büyük Yazı (2 Sayfa)",
-                                data=excel_a4,
-                                file_name=f"Sube_Stok_Siparis_A4_Buyuk_Yazi_{tarih_str}.xlsx",
+                                label="🖨️ A4 Dikey Yazdırma (2 Sayfa)",
+                                data=excel_dikey,
+                                file_name=f"Sube_Stok_Siparis_Dikey_2_Sayfa_{tarih_str}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 type="primary",
                                 use_container_width=True
