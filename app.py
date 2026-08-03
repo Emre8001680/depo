@@ -96,13 +96,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 SUBE_LISTESI = [
-    "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadiri Yolu", 
+    "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadirli Yolu", 
     "Nahır Yolu", "Eyup Sultan", "Bulvar", "Düziçi Çarşı", "Aşiyan", "Zeytinlik"
 ]
 
 SUBE_SIFRELERI = {
     "Raufbey": "1001", "Metin Tamer": "1002", "Hacı Osmanlı": "1003",
-    "Salı Yolu": "1004", "Kadiri Yolu": "1005", "Nahır Yolu": "1006",
+    "Salı Yolu": "1004", "Kadirli Yolu": "1005", "Nahır Yolu": "1006",
     "Eyup Sultan": "1007", "Bulvar": "1008", "Düziçi Çarşı": "1009",
     "Aşiyan": "1010", "Zeytinlik": "1011"
 }
@@ -881,7 +881,7 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
         ("Salı Yolu", "Salı Y."),
         ("Bulvar", "Bulvar"),
         ("Düziçi Çarşı", "Düziçi"),
-        ("Kadiri Yolu", "Kadirli"),
+        ("Kadirli Yolu", "Kadirli"),
         ("Zeytinlik", "Zeytinlik"),
         ("Raufbey", "Rauf."),
         ("Eyup Sultan", "Eyüp S."),
