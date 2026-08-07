@@ -414,6 +414,8 @@ def siparis_oturumunu_temizle(sube, tarih):
     onekler = (
         f"siparis_taslak_{sube}_{tarih}",
         f"siparis_snapshot_{sube}_{tarih}",
+        f"siparis_taslak_hash_{sube}_{tarih}",
+        f"siparis_taslak_restore_{sube}_{tarih}",
         f"urun_arama_{sube}_{tarih}",
         f"dolu_{sube}_{tarih}_",
         f"stok_{sube}_{tarih}_",
@@ -999,6 +1001,62 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
     return output.getvalue()
 
 
+def siparis_taslagini_oku(sube, tarih):
+    """Şube+tarih bazlı kalıcı sipariş taslağını Supabase'den okur."""
+    try:
+        kayitlar = (
+            supabase.table("siparis_taslaklari")
+            .select("sube,tarih,taslak,genel_not,updated_at")
+            .eq("sube", sube)
+            .eq("tarih", tarih)
+            .limit(1)
+            .execute().data or []
+        )
+        return kayitlar[0] if kayitlar else None
+    except Exception:
+        # Taslak tablosu henüz kurulmadıysa ana sipariş ekranını bozma.
+        return None
+
+
+def siparis_taslagini_kaydet(sube, tarih, taslak, genel_not=""):
+    """Sipariş ekranındaki kaydedilmemiş değerleri kalıcı taslak olarak saklar."""
+    payload = {
+        "sube": str(sube),
+        "tarih": str(tarih),
+        "taslak": taslak or {},
+        "genel_not": str(genel_not or ""),
+        "updated_at": simdi_tr().isoformat(),
+    }
+    try:
+        supabase.table("siparis_taslaklari").upsert(
+            payload, on_conflict="sube,tarih"
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def siparis_taslagini_sil(sube, tarih):
+    """Kesin kayıt/iptal/manuel yenileme sonrası kalıcı taslağı temizler."""
+    try:
+        supabase.table("siparis_taslaklari").delete().eq("sube", sube).eq("tarih", tarih).execute()
+        return True
+    except Exception:
+        return False
+
+
+def siparis_taslak_hash(taslak, genel_not=""):
+    """Gereksiz Supabase yazmalarını önlemek için taslağın kararlı özetini üretir."""
+    payload = json.dumps(
+        {"taslak": taslak or {}, "genel_not": str(genel_not or "")},
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def siparis_notlarini_oku(sube, baslangic_tarihi, bitis_tarihi=None):
     """Şube sipariş notlarını güvenli şekilde okur."""
     bitis_tarihi = bitis_tarihi or baslangic_tarihi
@@ -1455,6 +1513,18 @@ else:
                     (str(n.get("genel_not") or "") for n in bugun_not_kayitlari if str(n.get("genel_not") or "").strip()),
                     "",
                 )
+
+                # Telefon tarayıcısı arka plana alındığında Streamlit oturumu kopabilir.
+                # Bu nedenle kaydedilmemiş girişleri şube+tarih bazında Supabase taslağından geri yükle.
+                kalici_taslak_kaydi = siparis_taslagini_oku(secilen_sube, bugun_str)
+                kalici_taslak = {}
+                kalici_genel_not = ""
+                if kalici_taslak_kaydi:
+                    ham_taslak = kalici_taslak_kaydi.get("taslak") or {}
+                    if isinstance(ham_taslak, dict):
+                        kalici_taslak = ham_taslak
+                    kalici_genel_not = str(kalici_taslak_kaydi.get("genel_not") or "")
+
                 siparis_snapshot_key = f"siparis_snapshot_{secilen_sube}_{bugun_str}"
                 if siparis_snapshot_key not in st.session_state:
                     st.session_state[siparis_snapshot_key] = kayit_ozeti(siparis_verileri)
@@ -1476,14 +1546,33 @@ else:
                     st.session_state[siparis_taslak_key] = {
                         u["KODU"]: {
                             "urun_adi": u["ADI"],
-                            "stok": kayitli_dict.get(u["KODU"], {}).get("stok", "0"),
-                            "siparis": float(kayitli_dict.get(u["KODU"], {}).get("siparis", 0.0)),
-                            "not": bugun_urun_notlari.get(u["KODU"], ""),
+                            "stok": str(
+                                kalici_taslak.get(u["KODU"], {}).get(
+                                    "stok", kayitli_dict.get(u["KODU"], {}).get("stok", "0")
+                                )
+                            ),
+                            "siparis": float(
+                                kalici_taslak.get(u["KODU"], {}).get(
+                                    "siparis", kayitli_dict.get(u["KODU"], {}).get("siparis", 0.0)
+                                ) or 0.0
+                            ),
+                            "not": str(
+                                kalici_taslak.get(u["KODU"], {}).get(
+                                    "not", bugun_urun_notlari.get(u["KODU"], "")
+                                ) or ""
+                            ),
                         }
                         for u in URUNLER
                     }
 
+                    if kalici_taslak:
+                        restore_key = f"siparis_taslak_restore_{secilen_sube}_{bugun_str}"
+                        st.session_state[restore_key] = True
+
                 siparis_taslagi = st.session_state[siparis_taslak_key]
+                restore_key = f"siparis_taslak_restore_{secilen_sube}_{bugun_str}"
+                if st.session_state.pop(restore_key, False):
+                    st.success("🔄 Kaydedilmemiş sipariş taslağınız geri yüklendi. Kaldığınız yerden devam edebilirsiniz.")
                 df = pd.DataFrame(URUNLER)
                 arama = st.text_input(
                     "🔍 **Ürün Ara (Adı veya Kodu):**",
@@ -1571,13 +1660,29 @@ else:
 
                 genel_not_key = f"genel_siparis_notu_{secilen_sube}_{bugun_str}"
                 if genel_not_key not in st.session_state:
-                    st.session_state[genel_not_key] = bugun_genel_not
+                    st.session_state[genel_not_key] = kalici_genel_not if kalici_taslak_kaydi else bugun_genel_not
                 genel_siparis_notu = st.text_area(
                     "📝 Genel Sipariş Notu (isteğe bağlı)",
                     max_chars=500,
                     placeholder="Siparişin tamamı için açıklama yazabilirsiniz...",
                     key=genel_not_key,
                 )
+
+                # Oturumdan bağımsız otomatik taslak kaydı.
+                # Streamlit widget değişikliğinde yeniden çalıştığı için yalnızca gerçekten değişen taslak Supabase'e yazılır.
+                taslak_hash_key = f"siparis_taslak_hash_{secilen_sube}_{bugun_str}"
+                guncel_taslak_hash = siparis_taslak_hash(siparis_taslagi, genel_siparis_notu)
+                # İlk ekran açılışındaki mevcut kesin siparişi yanlışlıkla "taslak" olarak oluşturma.
+                # İlk hash sadece referans alınır; bundan sonraki gerçek kullanıcı değişiklikleri buluta yazılır.
+                if taslak_hash_key not in st.session_state:
+                    st.session_state[taslak_hash_key] = guncel_taslak_hash
+                elif st.session_state.get(taslak_hash_key) != guncel_taslak_hash:
+                    if siparis_taslagini_kaydet(
+                        secilen_sube, bugun_str, siparis_taslagi, genel_siparis_notu
+                    ):
+                        st.session_state[taslak_hash_key] = guncel_taslak_hash
+                    else:
+                        st.caption("⚠️ Otomatik taslak buluta kaydedilemedi. İnternet bağlantısı gelince bir sonraki değişiklikte tekrar denenecek.")
 
                 # Arama sonucu görünmeyen ürünler dahil tüm taslaktan kayıt listesi üret.
                 kaydedilecek_veriler = []
@@ -1631,6 +1736,9 @@ else:
                             else:
                                 st.warning("⚠️ Tüm değerler 0 olduğu için bugünkü sipariş temizlendi.")
                                 st.session_state[siparis_snapshot_key] = kayit_ozeti([])
+                            # Kesin sipariş başarıyla kaydedildi; artık taslak gerekli değil.
+                            siparis_taslagini_sil(secilen_sube, bugun_str)
+                            st.session_state.pop(f"siparis_taslak_hash_{secilen_sube}_{bugun_str}", None)
                             st.rerun()
 
                 with btn_col2:
@@ -1641,6 +1749,8 @@ else:
                         use_container_width=True,
                         help="Ekrandaki kaydedilmemiş taslağı temizler ve Supabase'deki en güncel siparişi yeniden açar.",
                     ):
+                        # Kullanıcı bu butonla özellikle kaydedilmemiş taslağı atmayı seçmiş olur.
+                        siparis_taslagini_sil(secilen_sube, bugun_str)
                         siparis_oturumunu_temizle(secilen_sube, bugun_str)
                         st.toast("Güncel sipariş verileri yeniden yükleniyor...", icon="🔄")
                         st.rerun()
@@ -1659,6 +1769,7 @@ else:
                                 "Sipariş notlarını silme",
                                 lambda: supabase.table("siparis_notlari").delete().eq("sube", secilen_sube).eq("tarih", bugun_str).execute(),
                             )
+                            siparis_taslagini_sil(secilen_sube, bugun_str)
                             siparis_oturumunu_temizle(secilen_sube, bugun_str)
                             st.success("🗑️ Bugünkü sipariş tamamen silindi.")
                             st.rerun()
