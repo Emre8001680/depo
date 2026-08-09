@@ -410,23 +410,38 @@ def degisiklik_loglarini_yaz(eski, yeni, kullanici, rol, varsayilan_sube, tablo,
 
 
 def siparis_oturumunu_temizle(sube, tarih):
-    """Sipariş silindikten sonra eski taslak ve widget değerlerini oturumdan kaldırır."""
-    onekler = (
+    """
+    Siparişe ait mantıksal oturum verilerini temizler.
+
+    ÖNEMLİ: Streamlit widget anahtarlarını topluca silmiyoruz. Mobil Safari/Chrome
+    eski widget durumunu yeniden gönderirken çalışan widget state'ini silmek,
+    session_state callback zincirinde çakışmaya neden olabiliyor. Bunun yerine
+    widget sürümünü artırıp yeni ve temiz bir anahtar setine geçiyoruz.
+    """
+    mantiksal_anahtarlar = (
         f"siparis_taslak_{sube}_{tarih}",
         f"siparis_snapshot_{sube}_{tarih}",
         f"siparis_taslak_hash_{sube}_{tarih}",
         f"siparis_taslak_restore_{sube}_{tarih}",
-        f"urun_arama_{sube}_{tarih}",
-        f"dolu_{sube}_{tarih}_",
-        f"stok_{sube}_{tarih}_",
-        f"sip_{sube}_{tarih}_",
-        f"urun_not_{sube}_{tarih}_",
-        f"genel_siparis_notu_{sube}_{tarih}",
-        f"iptal_onay_{sube}",
     )
-    for anahtar in list(st.session_state.keys()):
-        if any(anahtar == onek or anahtar.startswith(onek) for onek in onekler):
-            del st.session_state[anahtar]
+    for anahtar in mantiksal_anahtarlar:
+        st.session_state.pop(anahtar, None)
+
+    # Eski widget'lara dokunmadan yeni bir widget nesli oluştur.
+    st.session_state["siparis_widget_surum"] = int(
+        st.session_state.get("siparis_widget_surum", 0)
+    ) + 1
+
+
+def siparis_widget_baglamini_hazirla(sube, tarih):
+    """Şube/tarih değiştiğinde yeni, çakışmasız widget anahtarları üretir."""
+    baglam = f"{sube}|{tarih}"
+    if st.session_state.get("siparis_widget_baglam") != baglam:
+        st.session_state["siparis_widget_baglam"] = baglam
+        st.session_state["siparis_widget_surum"] = int(
+            st.session_state.get("siparis_widget_surum", 0)
+        ) + 1
+    return int(st.session_state.get("siparis_widget_surum", 1))
 
 
 def tum_oturumlari_kapat():
@@ -1525,6 +1540,10 @@ else:
                         kalici_taslak = ham_taslak
                     kalici_genel_not = str(kalici_taslak_kaydi.get("genel_not") or "")
 
+                # Mobil tarayıcı geri dönüşlerinde eski widget state ile yeni ekranın
+                # çakışmaması için her şube+tarih bağlamında sürümlü widget anahtarı kullan.
+                widget_surum = siparis_widget_baglamini_hazirla(secilen_sube, bugun_str)
+
                 siparis_snapshot_key = f"siparis_snapshot_{secilen_sube}_{bugun_str}"
                 if siparis_snapshot_key not in st.session_state:
                     st.session_state[siparis_snapshot_key] = kayit_ozeti(siparis_verileri)
@@ -1571,13 +1590,14 @@ else:
 
                 siparis_taslagi = st.session_state[siparis_taslak_key]
                 restore_key = f"siparis_taslak_restore_{secilen_sube}_{bugun_str}"
-                if st.session_state.pop(restore_key, False):
+                if st.session_state.get(restore_key, False):
                     st.success("🔄 Kaydedilmemiş sipariş taslağınız geri yüklendi. Kaldığınız yerden devam edebilirsiniz.")
+                    st.session_state[restore_key] = False
                 df = pd.DataFrame(URUNLER)
                 arama = st.text_input(
                     "🔍 **Ürün Ara (Adı veya Kodu):**",
                     "",
-                    key=f"urun_arama_{secilen_sube}_{bugun_str}",
+                    key=f"urun_arama_{secilen_sube}_{bugun_str}_v{widget_surum}",
                 )
                 filtre_df = (
                     df[
@@ -1599,9 +1619,9 @@ else:
                     varsayilan_stok_str = str(urun_taslagi.get("stok", "0"))
                     varsayilan_siparis = float(urun_taslagi.get("siparis", 0.0) or 0.0)
 
-                    dolu_key = f"dolu_{secilen_sube}_{bugun_str}_{kod}"
-                    stok_key = f"stok_{secilen_sube}_{bugun_str}_{kod}"
-                    sip_key = f"sip_{secilen_sube}_{bugun_str}_{kod}"
+                    dolu_key = f"dolu_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
+                    stok_key = f"stok_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
+                    sip_key = f"sip_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
 
                     # Widget ilk kez oluşturuluyorsa taslaktaki değerleri yükle.
                     if dolu_key not in st.session_state:
@@ -1640,7 +1660,7 @@ else:
                                 step=1.0,
                                 key=sip_key,
                             )
-                        not_key = f"urun_not_{secilen_sube}_{bugun_str}_{kod}"
+                        not_key = f"urun_not_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
                         if not_key not in st.session_state:
                             st.session_state[not_key] = str(urun_taslagi.get("not", "") or "")
                         urun_notu = st.text_input(
@@ -1658,7 +1678,7 @@ else:
                         "not": str(urun_notu or "").strip(),
                     }
 
-                genel_not_key = f"genel_siparis_notu_{secilen_sube}_{bugun_str}"
+                genel_not_key = f"genel_siparis_notu_{secilen_sube}_{bugun_str}_v{widget_surum}"
                 if genel_not_key not in st.session_state:
                     st.session_state[genel_not_key] = kalici_genel_not if kalici_taslak_kaydi else bugun_genel_not
                 genel_siparis_notu = st.text_area(
@@ -1667,6 +1687,7 @@ else:
                     placeholder="Siparişin tamamı için açıklama yazabilirsiniz...",
                     key=genel_not_key,
                 )
+                st.caption("🛡️ Mobil koruma aktif: Değişiklikler otomatik taslak olarak Supabase'e aktarılır.")
 
                 # Oturumdan bağımsız otomatik taslak kaydı.
                 # Streamlit widget değişikliğinde yeniden çalıştığı için yalnızca gerçekten değişen taslak Supabase'e yazılır.
@@ -1738,7 +1759,7 @@ else:
                                 st.session_state[siparis_snapshot_key] = kayit_ozeti([])
                             # Kesin sipariş başarıyla kaydedildi; artık taslak gerekli değil.
                             siparis_taslagini_sil(secilen_sube, bugun_str)
-                            st.session_state.pop(f"siparis_taslak_hash_{secilen_sube}_{bugun_str}", None)
+                            siparis_oturumunu_temizle(secilen_sube, bugun_str)
                             st.rerun()
 
                 with btn_col2:
@@ -1756,7 +1777,7 @@ else:
                         st.rerun()
 
                 with btn_col3:
-                    iptal_onayi = st.checkbox("Sipariş iptalini onaylıyorum", key=f"iptal_onay_{secilen_sube}")
+                    iptal_onayi = st.checkbox("Sipariş iptalini onaylıyorum", key=f"iptal_onay_{secilen_sube}_v{widget_surum}")
                     if st.button("🗑️ Bugünkü Siparişi İptal Et", type="secondary", use_container_width=True, disabled=not iptal_onayi):
                         sonuc = guvenli_sorgu(
                             "Sipariş iptali",
