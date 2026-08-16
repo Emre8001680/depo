@@ -241,8 +241,7 @@ URUNLER = [{'KODU': '053016', 'ADI': 'MNV.ACI DOLMALIK'},
  {'KODU': '053742', 'ADI': 'MNV.YESIL SILI BIBER'},
  {'KODU': '13', 'ADI': 'MNV.YESIL SOGAN'},
  {'KODU': '051277', 'ADI': 'MNV.ZENCEFIL'},
- {'KODU': '09937', 'ADI': 'MNV.INCIR'},
- {'KODU': '09939', 'ADI': 'MNV.SIYAH INCIR'}]
+ {'KODU': '09937', 'ADI': 'MNV.INCIR'}]
 
 if "site_giris_yapildi" not in st.session_state:
     st.session_state.site_giris_yapildi = False
@@ -290,12 +289,22 @@ def kayit_ozeti(kayitlar):
 
 
 def baglanti_kontrolu():
-    """Supabase bağlantısını hafif bir sorguyla kontrol eder."""
+    """Supabase bağlantısını hafif bir sorguyla kontrol eder ve gerçek hata detayını döndürür."""
     try:
         supabase.table("siparisler").select("urun_kodu").limit(1).execute()
-        return True
-    except Exception:
-        return False
+        return True, None
+    except Exception as exc:
+        hata = f"{exc.__class__.__name__}: {str(exc).strip() or repr(exc)}"
+        # Hassas değerler yanlışlıkla hata metnine girerse maskele.
+        try:
+            if SUPABASE_KEY:
+                hata = hata.replace(str(SUPABASE_KEY), "***SUPABASE_KEY***")
+            if SUPABASE_URL:
+                hata = hata.replace(str(SUPABASE_URL), "***SUPABASE_URL***")
+        except Exception:
+            pass
+        print(f"[SUPABASE BAGLANTI HATASI] {hata}", flush=True)
+        return False, hata
 
 
 def hal_taslagini_guncelle(tarih, urun_kodu):
@@ -1458,11 +1467,14 @@ else:
             st.rerun()
 
     st.divider()
-    baglanti_var = baglanti_kontrolu()
+    baglanti_var, baglanti_hatasi = baglanti_kontrolu()
     if baglanti_var:
         st.caption("🟢 Veri bağlantısı aktif")
     else:
         st.error("🔴 Veri bağlantısı kurulamadı. Girdiğiniz alanlar bu sayfa açık kaldığı sürece korunur; bağlantı geldikten sonra tekrar kaydedin.")
+        if baglanti_hatasi:
+            st.code(baglanti_hatasi, language=None)
+            st.caption("ℹ️ Bu teknik hata satırını bize gönderin; URL ve API anahtarı otomatik maskelenir.")
     rol = st.session_state.aktif_rol
 
     # 1. ŞUBE SİPARİŞ GİRİŞİ
