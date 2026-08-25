@@ -241,7 +241,10 @@ URUNLER = [{'KODU': '053016', 'ADI': 'MNV.ACI DOLMALIK'},
  {'KODU': '053742', 'ADI': 'MNV.YESIL SILI BIBER'},
  {'KODU': '13', 'ADI': 'MNV.YESIL SOGAN'},
  {'KODU': '051277', 'ADI': 'MNV.ZENCEFIL'},
- {'KODU': '09937', 'ADI': 'MNV.INCIR'}]
+ {'KODU': '09937', 'ADI': 'MNV.INCIR'},
+ {'KODU': '01085', 'ADI': 'MNV.KORNISON'},
+ {'KODU': '017564', 'ADI': 'MNV.KIL BIBER'},
+ {'KODU': '09809', 'ADI': 'MNV.GALA ELMA'}]
 
 if "site_giris_yapildi" not in st.session_state:
     st.session_state.site_giris_yapildi = False
