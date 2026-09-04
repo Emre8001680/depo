@@ -1588,44 +1588,32 @@ else:
                 if st.session_state.get(restore_key, False):
                     st.success("🔄 Kaydedilmemiş sipariş taslağınız geri yüklendi. Kaldığınız yerden devam edebilirsiniz.")
                     st.session_state[restore_key] = False
-                # Taslak + canlı widget değerlerinden anlık özet üret.
-                # Böylece kullanıcı her değişiklikte kaç kalem/toplam sipariş girdiğini görür.
-                def anlik_urun_degeri(kod):
-                    taslak = siparis_taslagi.get(kod, {"stok": "0", "siparis": 0.0})
-                    dolu_key = f"dolu_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
-                    stok_key = f"stok_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
-                    sip_key = f"sip_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
-                    reyon_dolu = bool(st.session_state.get(dolu_key, str(taslak.get("stok", "0")) == "Reyon Dolu"))
-                    if reyon_dolu:
-                        stok = "Reyon Dolu"
-                    else:
-                        stok = st.session_state.get(stok_key, taslak.get("stok", "0"))
-                    try:
-                        siparis = float(st.session_state.get(sip_key, taslak.get("siparis", 0.0)) or 0.0)
-                    except (TypeError, ValueError):
-                        siparis = 0.0
-                    return stok, siparis, reyon_dolu
+                # Kompakt tablo görünümü: ürünleri tek tek expander olarak uzatmak yerine
+                # kaydırılabilir tek bir düzenleme tablosunda gösterir.
+                def taslak_ozeti():
+                    siparisli = set()
+                    stoklu = set()
+                    reyon_dolu = set()
+                    toplam = 0.0
+                    for urun in URUNLER:
+                        kod = urun["KODU"]
+                        veri = siparis_taslagi.get(kod, {"stok": "0", "siparis": 0.0})
+                        stok = str(veri.get("stok", "0")).strip()
+                        try:
+                            sip = float(veri.get("siparis", 0.0) or 0.0)
+                        except (TypeError, ValueError):
+                            sip = 0.0
+                        if sip > 0:
+                            siparisli.add(kod)
+                            toplam += sip
+                        if stok == "Reyon Dolu":
+                            reyon_dolu.add(kod)
+                            stoklu.add(kod)
+                        elif stok not in ("", "0", "0.0", "-"):
+                            stoklu.add(kod)
+                    return siparisli, stoklu, reyon_dolu, toplam
 
-                siparisli_kodlar = set()
-                stoklu_kodlar = set()
-                reyon_dolu_kodlar = set()
-                toplam_siparis_anlik = 0.0
-                for urun in URUNLER:
-                    stok_anlik, sip_anlik, rd_anlik = anlik_urun_degeri(urun["KODU"])
-                    if sip_anlik > 0:
-                        siparisli_kodlar.add(urun["KODU"])
-                        toplam_siparis_anlik += sip_anlik
-                    stok_metin = str(stok_anlik).strip()
-                    if rd_anlik:
-                        reyon_dolu_kodlar.add(urun["KODU"])
-                        stoklu_kodlar.add(urun["KODU"])
-                    elif stok_metin not in ("", "0", "0.0", "-"):
-                        stoklu_kodlar.add(urun["KODU"])
-
-                o1, o2, o3 = st.columns(3)
-                o1.metric("🛒 Siparişli Ürün", f"{len(siparisli_kodlar)}")
-                o2.metric("📦 Toplam Sipariş", f"{toplam_siparis_anlik:g} Kasa")
-                o3.metric("🧺 Stok Girilen", f"{len(stoklu_kodlar)}")
+                siparisli_kodlar, stoklu_kodlar, reyon_dolu_kodlar, toplam_siparis_anlik = taslak_ozeti()
 
                 st.markdown("#### 🔎 Ürünleri Bul ve Filtrele")
                 arama_col, filtre_col = st.columns([1.35, 1])
@@ -1660,65 +1648,90 @@ else:
                 elif hizli_filtre == "Reyon Dolu":
                     filtre_df = filtre_df[filtre_df["KODU"].isin(reyon_dolu_kodlar)]
 
-                st.markdown(f"#### 📦 Stok ve Sipariş Girişi <span style='font-size:13px; opacity:.65'>({len(filtre_df)} ürün gösteriliyor)</span>", unsafe_allow_html=True)
-
+                tablo_satirlari = []
                 for _, row in filtre_df.iterrows():
                     kod = row["KODU"]
-                    urun_taslagi = siparis_taslagi.setdefault(
-                        kod,
-                        {"urun_adi": row["ADI"], "stok": "0", "siparis": 0.0},
+                    veri = siparis_taslagi.setdefault(
+                        kod, {"urun_adi": row["ADI"], "stok": "0", "siparis": 0.0}
                     )
-                    varsayilan_stok_str = str(urun_taslagi.get("stok", "0"))
-                    varsayilan_siparis = float(urun_taslagi.get("siparis", 0.0) or 0.0)
+                    stok_raw = str(veri.get("stok", "0"))
+                    rd = stok_raw == "Reyon Dolu"
+                    try:
+                        stok_sayi = 0.0 if rd else float(stok_raw or 0)
+                    except (TypeError, ValueError):
+                        stok_sayi = 0.0
+                    try:
+                        sip_sayi = float(veri.get("siparis", 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        sip_sayi = 0.0
+                    tablo_satirlari.append({
+                        "Kod": kod,
+                        "Ürün": row["ADI"],
+                        "Stok": stok_sayi,
+                        "Sipariş": sip_sayi,
+                        "Reyon Dolu": rd,
+                    })
 
-                    dolu_key = f"dolu_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
-                    stok_key = f"stok_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
-                    sip_key = f"sip_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
+                editor_df = pd.DataFrame(tablo_satirlari)
+                st.markdown(
+                    f"#### 📦 Stok ve Sipariş Girişi "
+                    f"<span style='font-size:13px; opacity:.65'>({len(editor_df)} ürün)</span>",
+                    unsafe_allow_html=True,
+                )
+                st.caption("💡 Ürünler artık tek tabloda. Sayfayı uzatmadan tablonun içinde aşağı-yukarı kaydırabilirsiniz.")
 
-                    # Widget ilk kez oluşturuluyorsa taslaktaki değerleri yükle.
-                    if dolu_key not in st.session_state:
-                        st.session_state[dolu_key] = varsayilan_stok_str == "Reyon Dolu"
-                    if stok_key not in st.session_state:
+                if not editor_df.empty:
+                    editor_key_suffix = hashlib.md5(
+                        f"{arama}|{hizli_filtre}".encode("utf-8")
+                    ).hexdigest()[:8]
+                    duzenlenen_df = st.data_editor(
+                        editor_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=520,
+                        disabled=["Kod", "Ürün"],
+                        column_config={
+                            "Kod": st.column_config.TextColumn("Kod", width="small"),
+                            "Ürün": st.column_config.TextColumn("Ürün", width="large"),
+                            "Stok": st.column_config.NumberColumn(
+                                "Stok", min_value=0.0, step=1.0, format="%.0f", width="small"
+                            ),
+                            "Sipariş": st.column_config.NumberColumn(
+                                "Sipariş", min_value=0.0, step=1.0, format="%.0f", width="small"
+                            ),
+                            "Reyon Dolu": st.column_config.CheckboxColumn(
+                                "RD", help="Reyon Dolu / Depo Boş", width="small"
+                            ),
+                        },
+                        key=f"siparis_editor_{secilen_sube}_{bugun_str}_{editor_key_suffix}_v{widget_surum}",
+                    )
+
+                    # Tabloda yapılan değişiklikleri ana taslağa aktar.
+                    for _, e_row in duzenlenen_df.iterrows():
+                        kod = str(e_row["Kod"])
+                        rd = bool(e_row["Reyon Dolu"])
                         try:
-                            st.session_state[stok_key] = float(varsayilan_stok_str)
+                            stok_sayi = float(e_row["Stok"] or 0.0)
                         except (TypeError, ValueError):
-                            st.session_state[stok_key] = 0.0
-                    if sip_key not in st.session_state:
-                        st.session_state[sip_key] = varsayilan_siparis
+                            stok_sayi = 0.0
+                        try:
+                            sip_sayi = float(e_row["Sipariş"] or 0.0)
+                        except (TypeError, ValueError):
+                            sip_sayi = 0.0
+                        siparis_taslagi[kod] = {
+                            "urun_adi": str(e_row["Ürün"]),
+                            "stok": "Reyon Dolu" if rd else str(int(stok_sayi)),
+                            "siparis": sip_sayi,
+                        }
+                else:
+                    st.info("ℹ️ Seçtiğiniz filtreye uygun ürün bulunamadı.")
 
-                    with st.expander(f"**{row['ADI']}** *(Kod: {kod})*"):
-                        col1, col2 = st.columns([1.5, 1])
-                        with col1:
-                            stok_dolu = st.checkbox(
-                                "🟢 Reyon Dolu (Depo Boş)",
-                                key=dolu_key,
-                            )
-                            if not stok_dolu:
-                                stok_val = st.number_input(
-                                    "Mevcut Stok (Kasa)",
-                                    min_value=0.0,
-                                    step=1.0,
-                                    key=stok_key,
-                                )
-                                stok_kayit = str(int(stok_val))
-                            else:
-                                stok_kayit = "Reyon Dolu"
-                                st.caption("📌 *Stok 'Reyon Dolu' olarak kaydedilecek.*")
-
-                        with col2:
-                            siparis = st.number_input(
-                                "Sipariş (Kasa)",
-                                min_value=0.0,
-                                step=1.0,
-                                key=sip_key,
-                            )
-
-                    # Görünen ürünün son değerlerini tam taslağa işle.
-                    siparis_taslagi[kod] = {
-                        "urun_adi": row["ADI"],
-                        "stok": stok_kayit,
-                        "siparis": float(siparis),
-                    }
+                # Düzenleme sonrası kartları güncel taslaktan hesapla.
+                siparisli_kodlar, stoklu_kodlar, reyon_dolu_kodlar, toplam_siparis_anlik = taslak_ozeti()
+                o1, o2, o3 = st.columns(3)
+                o1.metric("🛒 Siparişli Ürün", f"{len(siparisli_kodlar)}")
+                o2.metric("📦 Toplam Sipariş", f"{toplam_siparis_anlik:g} Kasa")
+                o3.metric("🧺 Stok Girilen", f"{len(stoklu_kodlar)}")
 
                 st.caption("🛡️ Mobil koruma aktif: Değişiklikler otomatik taslak olarak Supabase'e aktarılır.")
 
