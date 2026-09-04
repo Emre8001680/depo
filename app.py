@@ -1667,8 +1667,12 @@ else:
                     tablo_satirlari.append({
                         "Kod": kod,
                         "Ürün": row["ADI"],
-                        "Stok": stok_sayi,
-                        "Sipariş": sip_sayi,
+                        # Sayısal kolonları metin olarak tutuyoruz. Böylece hücreye
+                        # tıklandığında NumberColumn editörü/popup açılmadan Excel gibi
+                        # doğrudan değer yazılabiliyor ve klavye ile hücreler arasında
+                        # gezinme daha akıcı oluyor.
+                        "Stok": str(int(stok_sayi)) if float(stok_sayi).is_integer() else str(stok_sayi),
+                        "Sipariş": str(int(sip_sayi)) if float(sip_sayi).is_integer() else str(sip_sayi),
                         "Reyon Dolu": rd,
                     })
 
@@ -1678,7 +1682,7 @@ else:
                     f"<span style='font-size:13px; opacity:.65'>({len(editor_df)} ürün)</span>",
                     unsafe_allow_html=True,
                 )
-                st.caption("💡 Ürünler artık tek tabloda. Sayfayı uzatmadan tablonun içinde aşağı-yukarı kaydırabilirsiniz.")
+                st.caption("⌨️ Excel gibi kullanım: Hücreyi seçip rakamı direkt yazın. Enter/Tab ile ilerleyin; hücre seçiliyken yön tuşlarıyla tabloda gezinin.")
 
                 if not editor_df.empty:
                     editor_key_suffix = hashlib.md5(
@@ -1693,11 +1697,11 @@ else:
                         column_config={
                             "Kod": st.column_config.TextColumn("Kod", width="small"),
                             "Ürün": st.column_config.TextColumn("Ürün", width="large"),
-                            "Stok": st.column_config.NumberColumn(
-                                "Stok", min_value=0.0, step=1.0, format="%.0f", width="small"
+                            "Stok": st.column_config.TextColumn(
+                                "Stok", width="small", help="Hücreyi seçip değeri direkt yazın"
                             ),
-                            "Sipariş": st.column_config.NumberColumn(
-                                "Sipariş", min_value=0.0, step=1.0, format="%.0f", width="small"
+                            "Sipariş": st.column_config.TextColumn(
+                                "Sipariş", width="small", help="Hücreyi seçip değeri direkt yazın"
                             ),
                             "Reyon Dolu": st.column_config.CheckboxColumn(
                                 "RD", help="Reyon Dolu / Depo Boş", width="small"
@@ -1710,14 +1714,20 @@ else:
                     for _, e_row in duzenlenen_df.iterrows():
                         kod = str(e_row["Kod"])
                         rd = bool(e_row["Reyon Dolu"])
-                        try:
-                            stok_sayi = float(e_row["Stok"] or 0.0)
-                        except (TypeError, ValueError):
-                            stok_sayi = 0.0
-                        try:
-                            sip_sayi = float(e_row["Sipariş"] or 0.0)
-                        except (TypeError, ValueError):
-                            sip_sayi = 0.0
+                        def _hucre_sayisi(deger):
+                            # Boş, None ve Türkçe ondalık virgül girişlerini güvenli karşıla.
+                            if deger is None:
+                                return 0.0
+                            metin = str(deger).strip().replace(",", ".")
+                            if metin in ("", "None", "-"):
+                                return 0.0
+                            try:
+                                return max(0.0, float(metin))
+                            except (TypeError, ValueError):
+                                return 0.0
+
+                        stok_sayi = _hucre_sayisi(e_row["Stok"])
+                        sip_sayi = _hucre_sayisi(e_row["Sipariş"])
                         siparis_taslagi[kod] = {
                             "urun_adi": str(e_row["Ürün"]),
                             "stok": "Reyon Dolu" if rd else str(int(stok_sayi)),
