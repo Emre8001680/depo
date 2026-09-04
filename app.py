@@ -92,6 +92,77 @@ st.markdown("""
             opacity: 0.75;
             margin-bottom: 25px;
         }
+
+        /* V2 - Daha sade, mobil odaklı operasyon arayüzü */
+        .portal-hero {
+            border: 1px solid rgba(49, 125, 82, 0.20);
+            border-radius: 18px;
+            padding: 18px 20px;
+            margin: 4px 0 14px 0;
+            background: linear-gradient(135deg, rgba(31,107,58,.10), rgba(31,107,58,.02));
+        }
+        .portal-hero-title {
+            font-size: 24px;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 5px;
+        }
+        .portal-hero-sub {
+            font-size: 13px;
+            opacity: .72;
+        }
+        .status-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 6px 0 14px 0;
+        }
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 10px;
+            border: 1px solid rgba(49, 125, 82, .20);
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(31,107,58,.06);
+        }
+        .branch-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 9px;
+            margin: 8px 0 14px 0;
+        }
+        .branch-status-card {
+            border: 1px solid rgba(128,128,128,.20);
+            border-radius: 12px;
+            padding: 10px 12px;
+            font-size: 13px;
+            font-weight: 700;
+            background: rgba(128,128,128,.04);
+        }
+        .branch-status-card.ok { border-left: 4px solid #2e7d32; }
+        .branch-status-card.wait { border-left: 4px solid #c62828; }
+        div[data-testid="stMetric"] {
+            border: 1px solid rgba(128,128,128,.16);
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: rgba(128,128,128,.025);
+        }
+        div.stButton > button {
+            border-radius: 10px;
+            min-height: 42px;
+            font-weight: 700;
+        }
+        @media (max-width: 760px) {
+            .block-container { padding: .8rem .7rem 1.4rem .7rem !important; }
+            .portal-hero { padding: 14px 14px; border-radius: 14px; }
+            .portal-hero-title { font-size: 20px; }
+            .branch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            div[data-testid="stMetric"] { padding: 9px 10px; }
+            div[data-testid="stMetricValue"] { font-size: 1.45rem; }
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -1366,18 +1437,18 @@ if not st.session_state.site_giris_yapildi:
             st.rerun()
 
 else:
-    st.markdown("### 📌 Sayfa Geçişi")
+    st.markdown("### 🥭 Manav Portalı")
     m_col1, m_col2, m_col3, m_col4 = st.columns([1, 1, 1, 0.8])
     with m_col1:
-        if st.button("🏬 Şube Girişi", type="primary" if st.session_state.aktif_rol == "🏬 Şube Girişi" else "secondary", use_container_width=True):
+        if st.button("🏬 Şube Sipariş", type="primary" if st.session_state.aktif_rol == "🏬 Şube Girişi" else "secondary", use_container_width=True):
             st.session_state.aktif_rol = "🏬 Şube Girişi"
             st.rerun()
     with m_col2:
-        if st.button("🚛 Hal Dağıtım Paneli", type="primary" if st.session_state.aktif_rol == "🚛 Hal Dağıtım Paneli" else "secondary", use_container_width=True):
+        if st.button("🚛 Hal / Satınalma", type="primary" if st.session_state.aktif_rol == "🚛 Hal Dağıtım Paneli" else "secondary", use_container_width=True):
             st.session_state.aktif_rol = "🚛 Hal Dağıtım Paneli"
             st.rerun()
     with m_col3:
-        if st.button("👑 Merkez Panel", type="primary" if st.session_state.aktif_rol == "👑 Merkez Panel" else "secondary", use_container_width=True):
+        if st.button("👑 Merkez Yönetim", type="primary" if st.session_state.aktif_rol == "👑 Merkez Panel" else "secondary", use_container_width=True):
             st.session_state.aktif_rol = "👑 Merkez Panel"
             st.rerun()
     with m_col4:
@@ -1398,9 +1469,14 @@ else:
 
     # 1. ŞUBE SİPARİŞ GİRİŞİ
     if rol == "🏬 Şube Girişi":
-        st.markdown("<h2 style='text-align: center;'>🥭 Şube Manav Sipariş Portalı</h2>", unsafe_allow_html=True)
         bugun_str = simdi_tr().strftime('%Y-%m-%d')
-        st.caption(f"Tarih: {simdi_tr().strftime('%d.%m.%Y')}")
+        st.markdown(
+            f"""<div class='portal-hero'>
+                <div class='portal-hero-title'>🥭 Şube Manav Siparişi</div>
+                <div class='portal-hero-sub'>Günlük stok ve sipariş girişi • {simdi_tr().strftime('%d.%m.%Y')}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
 
         subeler = ["-- Seçiniz --"] + SUBE_LISTESI
         secilen_sube = st.selectbox("📍 **Lütfen Şubenizi Seçin:**", subeler)
@@ -1421,7 +1497,10 @@ else:
                         else:
                             st.error("❌ Hatalı Şube Şifresi!")
             else:
-                st.success(f"🔓 **{secilen_sube}** Şubesi Girişi Aktif")
+                st.markdown(
+                    f"<div class='status-strip'><span class='status-chip'>🏬 {secilen_sube}</span><span class='status-chip'>🟢 Bağlantı Aktif</span><span class='status-chip'>🛡️ Otomatik Taslak Koruması</span></div>",
+                    unsafe_allow_html=True,
+                )
                 if st.button("🔒 Şube Oturumunu Kapat", type="secondary"):
                     st.session_state.giris_yapilan_sube = None
                     st.rerun()
@@ -1509,22 +1588,79 @@ else:
                 if st.session_state.get(restore_key, False):
                     st.success("🔄 Kaydedilmemiş sipariş taslağınız geri yüklendi. Kaldığınız yerden devam edebilirsiniz.")
                     st.session_state[restore_key] = False
-                df = pd.DataFrame(URUNLER)
-                arama = st.text_input(
-                    "🔍 **Ürün Ara (Adı veya Kodu):**",
-                    "",
-                    key=f"urun_arama_{secilen_sube}_{bugun_str}_v{widget_surum}",
-                )
-                filtre_df = (
-                    df[
-                        df["ADI"].str.contains(arama, case=False, na=False)
-                        | df["KODU"].str.contains(arama, case=False, na=False)
-                    ]
-                    if arama
-                    else df
-                )
+                # Taslak + canlı widget değerlerinden anlık özet üret.
+                # Böylece kullanıcı her değişiklikte kaç kalem/toplam sipariş girdiğini görür.
+                def anlik_urun_degeri(kod):
+                    taslak = siparis_taslagi.get(kod, {"stok": "0", "siparis": 0.0})
+                    dolu_key = f"dolu_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
+                    stok_key = f"stok_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
+                    sip_key = f"sip_{secilen_sube}_{bugun_str}_{kod}_v{widget_surum}"
+                    reyon_dolu = bool(st.session_state.get(dolu_key, str(taslak.get("stok", "0")) == "Reyon Dolu"))
+                    if reyon_dolu:
+                        stok = "Reyon Dolu"
+                    else:
+                        stok = st.session_state.get(stok_key, taslak.get("stok", "0"))
+                    try:
+                        siparis = float(st.session_state.get(sip_key, taslak.get("siparis", 0.0)) or 0.0)
+                    except (TypeError, ValueError):
+                        siparis = 0.0
+                    return stok, siparis, reyon_dolu
 
-                st.subheader("📦 Stok ve Sipariş Girişi (Kasa)")
+                siparisli_kodlar = set()
+                stoklu_kodlar = set()
+                reyon_dolu_kodlar = set()
+                toplam_siparis_anlik = 0.0
+                for urun in URUNLER:
+                    stok_anlik, sip_anlik, rd_anlik = anlik_urun_degeri(urun["KODU"])
+                    if sip_anlik > 0:
+                        siparisli_kodlar.add(urun["KODU"])
+                        toplam_siparis_anlik += sip_anlik
+                    stok_metin = str(stok_anlik).strip()
+                    if rd_anlik:
+                        reyon_dolu_kodlar.add(urun["KODU"])
+                        stoklu_kodlar.add(urun["KODU"])
+                    elif stok_metin not in ("", "0", "0.0", "-"):
+                        stoklu_kodlar.add(urun["KODU"])
+
+                o1, o2, o3 = st.columns(3)
+                o1.metric("🛒 Siparişli Ürün", f"{len(siparisli_kodlar)}")
+                o2.metric("📦 Toplam Sipariş", f"{toplam_siparis_anlik:g} Kasa")
+                o3.metric("🧺 Stok Girilen", f"{len(stoklu_kodlar)}")
+
+                st.markdown("#### 🔎 Ürünleri Bul ve Filtrele")
+                arama_col, filtre_col = st.columns([1.35, 1])
+                with arama_col:
+                    arama = st.text_input(
+                        "Ürün Ara",
+                        "",
+                        placeholder="Ürün adı veya kodu yazın...",
+                        key=f"urun_arama_{secilen_sube}_{bugun_str}_v{widget_surum}",
+                        label_visibility="collapsed",
+                    )
+                with filtre_col:
+                    hizli_filtre = st.radio(
+                        "Hızlı filtre",
+                        ["Tümü", "Sipariş Girilen", "Stok Girilen", "Reyon Dolu"],
+                        horizontal=True,
+                        key=f"urun_hizli_filtre_{secilen_sube}_{bugun_str}_v{widget_surum}",
+                        label_visibility="collapsed",
+                    )
+
+                df = pd.DataFrame(URUNLER)
+                filtre_df = df.copy()
+                if arama:
+                    filtre_df = filtre_df[
+                        filtre_df["ADI"].str.contains(arama, case=False, na=False)
+                        | filtre_df["KODU"].str.contains(arama, case=False, na=False)
+                    ]
+                if hizli_filtre == "Sipariş Girilen":
+                    filtre_df = filtre_df[filtre_df["KODU"].isin(siparisli_kodlar)]
+                elif hizli_filtre == "Stok Girilen":
+                    filtre_df = filtre_df[filtre_df["KODU"].isin(stoklu_kodlar)]
+                elif hizli_filtre == "Reyon Dolu":
+                    filtre_df = filtre_df[filtre_df["KODU"].isin(reyon_dolu_kodlar)]
+
+                st.markdown(f"#### 📦 Stok ve Sipariş Girişi <span style='font-size:13px; opacity:.65'>({len(filtre_df)} ürün gösteriliyor)</span>", unsafe_allow_html=True)
 
                 for _, row in filtre_df.iterrows():
                     kod = row["KODU"]
@@ -1629,7 +1765,7 @@ else:
                 st.divider()
                 btn_col1, btn_col2, btn_col3 = st.columns([2, 1.15, 1.15])
                 with btn_col1:
-                    if st.button("💾 Siparişleri Güncelle / Kaydet", type="primary", use_container_width=True):
+                    if st.button("✅ SİPARİŞİ KAYDET / GÜNCELLE", type="primary", use_container_width=True):
                         with st.spinner("Sipariş güvenli şekilde kaydediliyor..."):
                             sonuc = guvenli_sorgu(
                                 "Sipariş kaydetme",
@@ -2001,7 +2137,7 @@ else:
 
     # 3. MERKEZ YÖNETİM PANELİ
     elif rol == "👑 Merkez Panel":
-        st.markdown("<h2 style='text-align: center;'>🔒 Merkez Yönetim Paneli</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>👑 Merkez Yönetim</h2>", unsafe_allow_html=True)
 
         if not st.session_state.admin_authed:
             sifre_giris = st.text_input("🔑 Lütfen Yönetim Şifresini Giriniz:", type="password")
@@ -2030,11 +2166,11 @@ else:
 
             # SEKMELER
             tab_dashboard, tab_sip, tab_hal, tab_log, tab_yonetim = st.tabs([
-                "📊 Yönetim Dashboard",
-                "🛒 Şube Sipariş ve Stok Matrisi", 
-                "🚛 Hal Sevkiyat ve Dağıtım Verileri",
+                "🏠 Bugün",
+                "🛒 Siparişler",
+                "🚛 Hal / Sevkiyat",
                 "🧾 İşlem Geçmişi",
-                "🗑️ Veri / Geçmiş Yönetimi (Silme)"
+                "⚙️ Yönetim"
             ])
 
             with tab_dashboard:
@@ -2059,21 +2195,38 @@ else:
                 giren_subeler = sorted(df_ds["sube"].dropna().unique().tolist()) if not df_ds.empty else []
                 urun_sayisi = int(df_ds.loc[df_ds["siparis_miktari"] > 0, "urun_kodu"].nunique()) if not df_ds.empty else 0
 
-                st.subheader(f"📊 {secilen_tarih.strftime('%d.%m.%Y')} Yönetim Özeti")
+                st.markdown(
+                    f"""<div class='portal-hero'>
+                        <div class='portal-hero-title'>🏠 Günlük Operasyon Merkezi</div>
+                        <div class='portal-hero-sub'>{secilen_tarih.strftime('%d.%m.%Y')} • Tüm şubelerin sipariş ve sevkiyat durumu</div>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("Sipariş Giren Şube", f"{len(giren_subeler)} / {len(SUBE_LISTESI)}")
-                k2.metric("Sipariş Verilen Ürün", f"{urun_sayisi}")
-                k3.metric("Toplam Sipariş", f"{siparis_toplam:.0f} Kasa")
-                k4.metric("Toplam Sevkiyat", f"{sevk_toplam:.0f} Kasa")
+                k1.metric("✅ Sipariş Giren", f"{len(giren_subeler)} / {len(SUBE_LISTESI)}")
+                k2.metric("🍉 Siparişli Ürün", f"{urun_sayisi}")
+                k3.metric("📦 Toplam Sipariş", f"{siparis_toplam:.0f} Kasa")
+                k4.metric("🚚 Toplam Sevkiyat", f"{sevk_toplam:.0f} Kasa")
 
                 eksik_subeler = [s for s in SUBE_LISTESI if s not in giren_subeler]
-                durum_col1, durum_col2 = st.columns(2)
-                with durum_col1:
-                    st.markdown("#### 🟢 Sipariş Giren Şubeler")
-                    st.write(", ".join(giren_subeler) if giren_subeler else "Henüz sipariş giren şube yok.")
-                with durum_col2:
-                    st.markdown("#### 🔴 Sipariş Girmeyen Şubeler")
-                    st.write(", ".join(eksik_subeler) if eksik_subeler else "Tüm şubeler siparişini girdi.")
+                tamamlanma_orani = (len(giren_subeler) / len(SUBE_LISTESI)) if SUBE_LISTESI else 0
+                st.markdown(f"**Günlük sipariş tamamlanma:** %{tamamlanma_orani * 100:.0f}")
+                st.progress(tamamlanma_orani)
+
+                st.markdown("#### 🏬 Şube Sipariş Durumu")
+                kartlar = []
+                for s_name in SUBE_LISTESI:
+                    tamam = s_name in giren_subeler
+                    durum_sinifi = "ok" if tamam else "wait"
+                    ikon = "🟢" if tamam else "🔴"
+                    metin = "Sipariş girildi" if tamam else "Sipariş bekleniyor"
+                    kartlar.append(f"<div class='branch-status-card {durum_sinifi}'>{ikon} {s_name}<br><span style='font-size:11px; font-weight:500; opacity:.68'>{metin}</span></div>")
+                st.markdown("<div class='branch-grid'>" + "".join(kartlar) + "</div>", unsafe_allow_html=True)
+
+                if eksik_subeler:
+                    st.warning("⏳ Sipariş beklenen şubeler: " + ", ".join(eksik_subeler))
+                else:
+                    st.success("✅ Tüm şubeler günlük manav siparişini tamamladı.")
 
                 if not df_ds.empty and siparis_toplam > 0:
                     st.divider()
