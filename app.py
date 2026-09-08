@@ -1189,7 +1189,18 @@ def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
             miktar = float(r.get("siparis_miktari") or 0)
         except (TypeError, ValueError):
             miktar = 0.0
-        if miktar > 0:
+
+        stok_raw = r.get("mevcut_stok", "")
+        stok_text = str(stok_raw if stok_raw is not None else "").strip()
+        stok_var = stok_text.lower() == "reyon dolu"
+        if not stok_var:
+            try:
+                stok_var = float(stok_text.replace(",", ".")) > 0 if stok_text else False
+            except (TypeError, ValueError):
+                stok_var = bool(stok_text and stok_text not in {"0", "0.0", "-"})
+
+        # Şube çıktısında sipariş verilmese bile girilmiş mevcut stok görünür.
+        if miktar > 0 or stok_var:
             temiz.append({**r, "siparis_miktari": miktar})
 
     toplam_kasa = sum(r["siparis_miktari"] for r in temiz)
@@ -1222,7 +1233,17 @@ def generate_sube_tek_siparis_excel(sube, tarih_str, kayitlar):
 
     row = 8
     for r in sorted(temiz, key=lambda x: str(x.get("urun_adi", ""))):
-        values = [r.get("urun_kodu", ""), r.get("urun_adi", ""), r.get("mevcut_stok", ""), r.get("siparis_miktari", 0)]
+        siparis_degeri = r.get("siparis_miktari", 0)
+        try:
+            siparis_degeri = float(siparis_degeri or 0)
+        except (TypeError, ValueError):
+            siparis_degeri = 0
+        values = [
+            r.get("urun_kodu", ""),
+            r.get("urun_adi", ""),
+            r.get("mevcut_stok", ""),
+            siparis_degeri if siparis_degeri > 0 else "",
+        ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row, col, value)
             cell.border = border
@@ -1265,10 +1286,20 @@ def generate_sube_siparis_html(sube, tarih_str, kayitlar):
             miktar = float(r.get("siparis_miktari") or 0)
         except (TypeError, ValueError):
             miktar = 0.0
-        if miktar <= 0:
+
+        stok_raw = r.get("mevcut_stok", "")
+        stok_text = str(stok_raw if stok_raw is not None else "").strip()
+        stok_var = stok_text.lower() == "reyon dolu"
+        if not stok_var:
+            try:
+                stok_var = float(stok_text.replace(",", ".")) > 0 if stok_text else False
+            except (TypeError, ValueError):
+                stok_var = bool(stok_text and stok_text not in {"0", "0.0", "-"})
+
+        if miktar <= 0 and not stok_var:
             continue
         toplam += miktar
-        miktar_text = f"{miktar:g}"
+        miktar_text = f"{miktar:g}" if miktar > 0 else ""
         satirlar.append(
             "<tr>"
             f"<td>{html.escape(str(r.get('urun_kodu', '')))}</td>"
@@ -1838,7 +1869,7 @@ else:
                 # ŞUBE SİPARİŞ DÖKÜMÜ VE GEÇMİŞ SİPARİŞLER
                 st.divider()
                 st.markdown("## 🧾 Sipariş Dökümü ve Geçmiş Siparişler")
-                st.caption("Bugünkü veya geçmiş bir siparişi görüntüleyebilir, Excel indirebilir ya da doğrudan yazdırıp PDF olarak kaydedebilirsiniz.")
+                st.caption("Bugünkü veya geçmiş bir siparişi görüntüleyebilir, Excel indirebilir ya da doğrudan yazdırıp PDF olarak kaydedebilirsiniz. Çıktıda sipariş verilen ürünlerle birlikte şubenin girdiği mevcut stoklar da gösterilir.")
 
                 gecmis_col1, gecmis_col2 = st.columns(2)
                 with gecmis_col1:
@@ -1877,7 +1908,18 @@ else:
                             miktar = float(kayit.get("siparis_miktari") or 0)
                         except (TypeError, ValueError):
                             miktar = 0.0
-                        if miktar > 0:
+
+                        stok_raw = kayit.get("mevcut_stok", "")
+                        stok_text = str(stok_raw if stok_raw is not None else "").strip()
+                        stok_var = stok_text.lower() == "reyon dolu"
+                        if not stok_var:
+                            try:
+                                stok_var = float(stok_text.replace(",", ".")) > 0 if stok_text else False
+                            except (TypeError, ValueError):
+                                stok_var = bool(stok_text and stok_text not in {"0", "0.0", "-"})
+
+                        # Dökümde siparişsiz olsa bile girilmiş mevcut stokları da göster.
+                        if miktar > 0 or stok_var:
                             tarih_gruplari.setdefault(str(kayit.get("tarih")), []).append(kayit)
 
                     if not tarih_gruplari:
@@ -1886,9 +1928,22 @@ else:
                         ozet_satirlari = []
                         for tarih_key, kayitlar in tarih_gruplari.items():
                             toplam = sum(float(k.get("siparis_miktari") or 0) for k in kayitlar)
+                            siparisli_urun = sum(1 for k in kayitlar if float(k.get("siparis_miktari") or 0) > 0)
+                            stoklu_urun = 0
+                            for k in kayitlar:
+                                stok_text = str(k.get("mevcut_stok") if k.get("mevcut_stok") is not None else "").strip()
+                                stok_var = stok_text.lower() == "reyon dolu"
+                                if not stok_var:
+                                    try:
+                                        stok_var = float(stok_text.replace(",", ".")) > 0 if stok_text else False
+                                    except (TypeError, ValueError):
+                                        stok_var = bool(stok_text and stok_text not in {"0", "0.0", "-"})
+                                if stok_var:
+                                    stoklu_urun += 1
                             ozet_satirlari.append({
                                 "Tarih": datetime.strptime(tarih_key, "%Y-%m-%d").strftime("%d.%m.%Y"),
-                                "Ürün Çeşidi": len(kayitlar),
+                                "Siparişli Ürün": siparisli_urun,
+                                "Stok Girilen Ürün": stoklu_urun,
                                 "Toplam Sipariş": f"{toplam:g} Kasa",
                             })
                         st.dataframe(pd.DataFrame(ozet_satirlari), use_container_width=True, hide_index=True)
