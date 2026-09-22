@@ -315,8 +315,7 @@ URUNLER = [{'KODU': '053016', 'ADI': 'MNV.ACI DOLMALIK'},
  {'KODU': '09937', 'ADI': 'MNV.INCIR'},
  {'KODU': '01085', 'ADI': 'MNV.KORNISON'},
  {'KODU': '017564', 'ADI': 'MNV.KIL BIBER'},
- {'KODU': '09809', 'ADI': 'MNV.GALA ELMA'},
- {'KODU': '2908386', 'ADI': 'MNV.MALATYA ARMUT'}]
+ {'KODU': '09809', 'ADI': 'MNV.GALA ELMA'}]
 
 if "site_giris_yapildi" not in st.session_state:
     st.session_state.site_giris_yapildi = False
@@ -1563,6 +1562,26 @@ else:
                     lambda: supabase.table("siparisler").select("sube,tarih,urun_kodu,urun_adi,mevcut_stok,siparis_miktari").eq("sube", secilen_sube).eq("tarih", bugun_str).execute().data or []
                 )
 
+                # Şube bugün sipariş girerken bir önceki gün verdiği siparişi
+                # referans olarak görsün. Böylece yeni sipariş miktarını dün ile
+                # karşılaştırarak daha hızlı girebilir.
+                try:
+                    onceki_gun_str = (datetime.strptime(bugun_str, "%Y-%m-%d").date() - timedelta(days=1)).strftime("%Y-%m-%d")
+                except (TypeError, ValueError):
+                    onceki_gun_str = (simdi_tr().date() - timedelta(days=1)).strftime("%Y-%m-%d")
+                onceki_gun_verileri = guvenli_veri_oku(
+                    "Önceki gün siparişlerini okuma",
+                    lambda: supabase.table("siparisler").select("urun_kodu,siparis_miktari").eq("sube", secilen_sube).eq("tarih", onceki_gun_str).execute().data or []
+                )
+                onceki_gun_siparisleri = {}
+                for r in onceki_gun_verileri:
+                    kod = str(r.get("urun_kodu", ""))
+                    try:
+                        miktar = float(r.get("siparis_miktari") or 0)
+                    except (TypeError, ValueError):
+                        miktar = 0.0
+                    onceki_gun_siparisleri[kod] = miktar
+
                 # Telefon tarayıcısı arka plana alındığında Streamlit oturumu kopabilir.
                 # Bu nedenle kaydedilmemiş girişleri şube+tarih bazında Supabase taslağından geri yükle.
                 kalici_taslak_kaydi = siparis_taslagini_oku(secilen_sube, bugun_str)
@@ -1696,9 +1715,11 @@ else:
                         sip_sayi = float(veri.get("siparis", 0.0) or 0.0)
                     except (TypeError, ValueError):
                         sip_sayi = 0.0
+                    onceki_gun_sip = onceki_gun_siparisleri.get(kod, 0.0)
                     tablo_satirlari.append({
                         "Kod": kod,
                         "Ürün": row["ADI"],
+                        "Dün": (str(int(onceki_gun_sip)) if float(onceki_gun_sip).is_integer() else str(onceki_gun_sip)) if kod in onceki_gun_siparisleri else "-",
                         # Sayısal kolonları metin olarak tutuyoruz. Böylece hücreye
                         # tıklandığında NumberColumn editörü/popup açılmadan Excel gibi
                         # doğrudan değer yazılabiliyor ve klavye ile hücreler arasında
@@ -1714,7 +1735,7 @@ else:
                     f"<span style='font-size:13px; opacity:.65'>({len(editor_df)} ürün)</span>",
                     unsafe_allow_html=True,
                 )
-                st.caption("⌨️ Excel gibi kullanım: Hücreyi seçip rakamı direkt yazın. Enter/Tab ile ilerleyin; hücre seçiliyken yön tuşlarıyla tabloda gezinin.")
+                st.caption(f"📋 Dün ({onceki_gun_str}) verdiğiniz siparişler referans olarak gösteriliyor.  |  ⌨️ Excel gibi kullanım: Hücreyi seçip rakamı direkt yazın. Enter/Tab ile ilerleyin; hücre seçiliyken yön tuşlarıyla tabloda gezinin.")
 
                 if not editor_df.empty:
                     editor_key_suffix = hashlib.md5(
@@ -1725,10 +1746,11 @@ else:
                         use_container_width=True,
                         hide_index=True,
                         height=520,
-                        disabled=["Kod", "Ürün"],
+                        disabled=["Kod", "Ürün", "Dün"],
                         column_config={
                             "Kod": st.column_config.TextColumn("Kod", width="small"),
                             "Ürün": st.column_config.TextColumn("Ürün", width="large"),
+                            "Dün": st.column_config.TextColumn("Dün", width="small", help=f"{onceki_gun_str} tarihinde verdiğiniz sipariş"),
                             "Stok": st.column_config.TextColumn(
                                 "Stok", width="small", help="Hücreyi seçip değeri direkt yazın"
                             ),
