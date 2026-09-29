@@ -155,6 +155,14 @@ st.markdown("""
             min-height: 42px;
             font-weight: 700;
         }
+        /* Tablet/telefon: rerun sırasında tarayıcının sayfayı gereksiz sıçratmasını azalt. */
+        html, body {
+            scroll-behavior: auto !important;
+        }
+        [data-testid="stDataEditor"] {
+            scroll-margin-top: 12px !important;
+        }
+
         @media (max-width: 760px) {
             .block-container { padding: .8rem .7rem 1.4rem .7rem !important; }
             .portal-hero { padding: 14px 14px; border-radius: 14px; }
@@ -165,6 +173,58 @@ st.markdown("""
         }
     </style>
 """, unsafe_allow_html=True)
+
+def tablet_scroll_korumasi():
+    """
+    Tablet/telefonlarda st.data_editor her hücre değişiminde Streamlit'i yeniden
+    çalıştırdığı için tarayıcının sayfayı yukarı atmasını engeller.
+    Son scroll konumu tarayıcı sessionStorage'ında tutulur ve rerun sonrasında
+    tekrar uygulanır. Birkaç kısa zamanlayıcı, tablet klavyesinin açılıp kapanması
+    sırasında tarayıcının yeniden konum değiştirmesine karşı ek koruma sağlar.
+    """
+    components.html(
+        """
+        <script>
+        (() => {
+            const KEY = "yalcin_manav_scroll_y_v2";
+
+            try {
+                const parentWin = window.parent;
+                const storage = parentWin.sessionStorage;
+
+                const saveScroll = () => {
+                    try {
+                        storage.setItem(KEY, String(parentWin.scrollY || 0));
+                    } catch (e) {}
+                };
+
+                const restoreScroll = () => {
+                    try {
+                        const raw = storage.getItem(KEY);
+                        if (raw === null) return;
+                        const y = Math.max(0, parseInt(raw, 10) || 0);
+                        parentWin.scrollTo(0, y);
+                    } catch (e) {}
+                };
+
+                // Kullanıcı parmağıyla sayfayı hareket ettirirken son konumu sürekli tut.
+                parentWin.addEventListener("scroll", saveScroll, {passive: true});
+
+                // Rerun sonrası hemen ve klavye/viewport hareketlerinden sonra tekrar uygula.
+                restoreScroll();
+                [30, 100, 250, 500, 900].forEach(ms => {
+                    parentWin.setTimeout(restoreScroll, ms);
+                });
+
+                // Sayfa gizlenmeden önce son konumu kaydet.
+                parentWin.addEventListener("pagehide", saveScroll, {passive: true});
+            } catch (e) {}
+        })();
+        </script>
+        """,
+        height=1,
+        scrolling=False,
+    )
 
 SUBE_LISTESI = [
     "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadirli Yolu", 
@@ -1666,6 +1726,10 @@ else:
                     return siparisli, stoklu, reyon_dolu, toplam
 
                 siparisli_kodlar, stoklu_kodlar, reyon_dolu_kodlar, toplam_siparis_anlik = taslak_ozeti()
+
+                # Tabletlerde hücreye her girişten sonra sayfanın yukarı sıçramasını önle.
+                # Tablo kendi içinden kaydırılmaya devam eder.
+                tablet_scroll_korumasi()
 
                 st.markdown("#### 🔎 Ürünleri Bul ve Filtrele")
                 arama_col, filtre_col = st.columns([1.35, 1])
