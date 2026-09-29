@@ -218,6 +218,68 @@ def tablet_scroll_korumasi():
 
                 // Sayfa gizlenmeden önce son konumu kaydet.
                 parentWin.addEventListener("pagehide", saveScroll, {passive: true});
+
+                // ---------------------------------------------------------
+                // HÜCRE DÜZENLEME KUTUSU SCROLL HATASI DÜZELTMESİ
+                // Hücreye değer yazılırken (kutu açıkken) tablo kaydırılırsa, düzenleme
+                // kutusu ekranda sabit kalıp altındaki satırlar değişiyordu. Bu durumda
+                // kutu, ait olduğu satırdan kopuk kalıyor ve değer yanlış görünüyordu.
+                // Çözüm: kutu açıkken tablo üzerinde kaydırma başlarsa yazılan değer
+                // önce onaylanır (hücre dışına tıklama gibi, seçim yer değiştirmeden),
+                // kutu kapanır ve kaydırma normal devam eder.
+                // ---------------------------------------------------------
+                if (!parentWin.__yalcinEditorScrollFix) {
+                    parentWin.__yalcinEditorScrollFix = true;
+                    const doc = parentWin.document;
+
+                    const acikEditor = () => doc.querySelector(".gdg-input");
+
+                    const editoruOnayla = () => {
+                        const el = acikEditor();
+                        if (!el) return;
+                        // 1) Hücre dışına tıklama simülasyonu: değeri yerinde onaylar.
+                        ["mousedown", "mouseup", "click"].forEach(tip => {
+                            doc.body.dispatchEvent(new parentWin.MouseEvent(tip, {
+                                bubbles: true, cancelable: true, view: parentWin
+                            }));
+                        });
+                        // 2) Kutu hâlâ açıksa Enter ile onayla (yedek yöntem).
+                        parentWin.setTimeout(() => {
+                            const kalan = acikEditor();
+                            if (!kalan) return;
+                            kalan.dispatchEvent(new parentWin.KeyboardEvent("keydown", {
+                                key: "Enter", code: "Enter", keyCode: 13, which: 13,
+                                bubbles: true, cancelable: true
+                            }));
+                        }, 120);
+                    };
+
+                    const tabloIci = (hedef) => {
+                        try {
+                            return !!(hedef && hedef.closest &&
+                                hedef.closest('[data-testid="stDataFrame"], [data-testid="stDataEditor"]'));
+                        } catch (e) { return false; }
+                    };
+
+                    // Fare tekerleği / dokunmatik pad ile kaydırma
+                    doc.addEventListener("wheel", (ev) => {
+                        if (acikEditor() && tabloIci(ev.target)) editoruOnayla();
+                    }, {passive: true, capture: true});
+
+                    // Tablet parmakla kaydırma (küçük titremeleri yok saymak için eşik var)
+                    let dokunBaslangicY = null;
+                    doc.addEventListener("touchstart", (ev) => {
+                        dokunBaslangicY = (ev.touches && ev.touches.length) ? ev.touches[0].clientY : null;
+                    }, {passive: true, capture: true});
+                    doc.addEventListener("touchmove", (ev) => {
+                        if (dokunBaslangicY === null || !ev.touches || !ev.touches.length) return;
+                        if (Math.abs(ev.touches[0].clientY - dokunBaslangicY) < 12) return;
+                        if (acikEditor() && tabloIci(ev.target)) {
+                            dokunBaslangicY = null;
+                            editoruOnayla();
+                        }
+                    }, {passive: true, capture: true});
+                }
             } catch (e) {}
         })();
         </script>
