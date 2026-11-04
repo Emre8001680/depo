@@ -290,14 +290,14 @@ def tablet_scroll_korumasi():
 
 SUBE_LISTESI = [
     "Raufbey", "Metin Tamer", "Hacı Osmanlı", "Salı Yolu", "Kadirli Yolu", 
-    "Nahır Yolu", "Eyup Sultan", "Bulvar", "Düziçi Çarşı", "Aşiyan", "Zeytinlik"
+    "Nahır Yolu", "Eyup Sultan", "Bulvar", "Düziçi Çarşı", "Aşiyan", "Zeytinlik","Fakıuşağı"
 ]
 
 SUBE_SIFRELERI = {
     "Raufbey": "1001", "Metin Tamer": "1002", "Hacı Osmanlı": "1003",
     "Salı Yolu": "1004", "Kadirli Yolu": "1005", "Nahır Yolu": "1006",
     "Eyup Sultan": "1007", "Bulvar": "1008", "Düziçi Çarşı": "1009",
-    "Aşiyan": "1010", "Zeytinlik": "1011"
+    "Aşiyan": "1010", "Zeytinlik": "1011","Fakıuşağı": "1012"
 }
 
 HAL_SIFRESI = st.secrets.get("HAL_PASSWORD")
