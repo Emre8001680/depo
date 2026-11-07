@@ -1111,7 +1111,18 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
         ("Raufbey", "Rauf."),
         ("Eyup Sultan", "Eyüp S."),
         ("Nahır Yolu", "Nahır Y."),
+        ("Fakıuşağı", "Fakıuş."),
     ]
+    # Listede olmayan yeni bir şube eklenirse çıktıdan düşmesin.
+    _listedekiler = {s for s, _ in sube_sirasi}
+    for _s in SUBE_LISTESI:
+        if _s not in _listedekiler:
+            sube_sirasi.append((_s, _s[:8]))
+
+    # Sütun düzeni şube sayısına göre hesaplanır (A=ürün, sonra şubeler, sonra 2 toplam sütunu).
+    son_sutun = 1 + len(sube_sirasi) + 2
+    toplam_baslangic = son_sutun - 1
+    son_harf = openpyxl.utils.get_column_letter(son_sutun)
 
     ince = Side(border_style="thin", color="C8C8C8")
     kenarlik = Border(top=ince, left=ince, right=ince, bottom=ince)
@@ -1159,7 +1170,7 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
     for col_idx, baslik in enumerate(headers, start=1):
         hucre = ws.cell(row=1, column=col_idx, value=baslik)
         hucre.font = baslik_font
-        hucre.fill = toplam_dolgu if col_idx >= 13 else baslik_dolgu
+        hucre.fill = toplam_dolgu if col_idx >= toplam_baslangic else baslik_dolgu
         hucre.border = kenarlik
         hucre.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[1].height = 24
@@ -1176,10 +1187,10 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
         ])
         ws.append(satir)
         excel_satir = ws.max_row
-        for col_idx in range(1, 15):
+        for col_idx in range(1, son_sutun + 1):
             hucre = ws.cell(row=excel_satir, column=col_idx)
-            hucre.font = toplam_font if col_idx >= 13 else normal_font
-            hucre.fill = toplam_dolgu if col_idx >= 13 else (zebra_dolgu if sira % 2 == 0 else PatternFill(fill_type=None))
+            hucre.font = toplam_font if col_idx >= toplam_baslangic else normal_font
+            hucre.fill = toplam_dolgu if col_idx >= toplam_baslangic else (zebra_dolgu if sira % 2 == 0 else PatternFill(fill_type=None))
             hucre.border = kenarlik
             hucre.alignment = Alignment(
                 horizontal="left" if col_idx == 1 else "center",
@@ -1190,10 +1201,10 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
 
     # Örnek dosyadaki dar ve okunabilir sütun düzeni.
     ws.column_dimensions["A"].width = 22
-    for col in range(2, 13):
+    for col in range(2, toplam_baslangic):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 5.6
-    ws.column_dimensions["M"].width = 8.5
-    ws.column_dimensions["N"].width = 7.5
+    ws.column_dimensions[openpyxl.utils.get_column_letter(toplam_baslangic)].width = 8.5
+    ws.column_dimensions[openpyxl.utils.get_column_letter(son_sutun)].width = 7.5
 
     # A4 dikey, genişlik tek sayfa; uzunluk en fazla iki sayfa.
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
@@ -1208,7 +1219,7 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
     ws.page_margins.header = 0.10
     ws.page_margins.footer = 0.10
     ws.print_title_rows = "1:1"
-    ws.print_area = f"A1:N{ws.max_row}"
+    ws.print_area = f"A1:{son_harf}{ws.max_row}"
     ws.oddFooter.left.text = f"Tarih: {tarih_sorgu_str}"
     ws.oddFooter.center.text = "RD = Reyon Dolu | Hücre: Stok/Sipariş"
     ws.oddFooter.right.text = "Sayfa &P / &N"
