@@ -1235,6 +1235,158 @@ def generate_sube_siparis_dikey_2_sayfa(tarih_sorgu_str, df_wide):
     return output.getvalue()
 
 
+# ŞUBE ŞUBE AYRI SEVKİYAT ÇIKTISI
+# Her şube ayrı bir sayfa (sheet) olur ve tek A4'e sığar. Kalem sayısı fazlaysa liste
+# aynı sayfada yan yana iki bloğa bölünür. Sadece siparişi olan kalemler yazılır.
+def generate_sube_bazli_sevkiyat_excel(tarih_sorgu_str, df_wide):
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    try:
+        gorunen_tarih = datetime.strptime(tarih_sorgu_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError:
+        gorunen_tarih = tarih_sorgu_str
+
+    ince = Side(border_style="thin", color="9E9E9E")
+    kenarlik = Border(top=ince, left=ince, right=ince, bottom=ince)
+    baslik_dolgu = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+    ust_dolgu = PatternFill(start_color="1F6B3A", end_color="1F6B3A", fill_type="solid")
+    toplam_dolgu = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    zebra_dolgu = PatternFill(start_color="F3F8F3", end_color="F3F8F3", fill_type="solid")
+
+    def sayi(deger):
+        try:
+            return float(deger)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def goster(deger):
+        return int(deger) if float(deger).is_integer() else round(float(deger), 2)
+
+    def stok_metni(deger):
+        metin = str(deger if deger is not None else "").strip()
+        if metin in ("", "-", "None"):
+            return "-"
+        if metin.lower() == "reyon dolu":
+            return "RD"
+        try:
+            s = float(metin.replace(",", "."))
+            return str(int(s)) if s.is_integer() else f"{s:g}"
+        except (TypeError, ValueError):
+            return metin
+
+    sayfa_sayisi = 0
+    for sube in SUBE_LISTESI:
+        sip_kolon = f"{sube}_sip"
+        stok_kolon = f"{sube}_stok"
+        if sip_kolon not in df_wide.columns:
+            continue
+
+        kalemler = []
+        for _, r in df_wide.iterrows():
+            miktar = sayi(r.get(sip_kolon, 0))
+            if miktar > 0:
+                kalemler.append((str(r.get("urun_adi", "")), stok_metni(r.get(stok_kolon, "-")), miktar))
+        if not kalemler:
+            continue
+        kalemler.sort(key=lambda x: x[0])
+
+        toplam_kalem = len(kalemler)
+        toplam_kasa = sum(k[2] for k in kalemler)
+
+        ws = wb.create_sheet(title=sube[:31])
+        sayfa_sayisi += 1
+        ws.sheet_view.showGridLines = False
+
+        # 38 kalemden fazlaysa yan yana iki bloğa böl.
+        iki_blok = toplam_kalem > 38
+        yarim = (toplam_kalem + 1) // 2 if iki_blok else toplam_kalem
+        bloklar = [kalemler[:yarim], kalemler[yarim:]] if iki_blok else [kalemler]
+        blok_baslangic = [1, 6]  # A..D ve F..I (E boşluk)
+        son_sutun = 9 if iki_blok else 4
+
+        puntu = 10 if iki_blok else 11
+        satir_yuksekligi = 18 if iki_blok else 20
+
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=son_sutun)
+        c = ws.cell(1, 1, f"{sube.upper()}  -  SEVKİYAT LİSTESİ")
+        c.font = Font(name="Calibri", size=16, bold=True, color="FFFFFF")
+        c.fill = ust_dolgu
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 30
+
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=son_sutun)
+        c = ws.cell(
+            2, 1,
+            f"Tarih: {gorunen_tarih}     |     Toplam Kalem: {toplam_kalem}     |     Toplam: {goster(toplam_kasa)} Kasa"
+        )
+        c.font = Font(name="Calibri", size=11, bold=True)
+        c.fill = toplam_dolgu
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 22
+
+        basliklar = ["Ürün Adı", "Stok", "Sipariş", "Kontrol"]
+        for blok, baslangic in zip(bloklar, blok_baslangic):
+            for i, baslik in enumerate(basliklar):
+                h = ws.cell(4, baslangic + i, baslik)
+                h.font = Font(name="Calibri", size=puntu, bold=True)
+                h.fill = baslik_dolgu
+                h.border = kenarlik
+                h.alignment = Alignment(horizontal="center", vertical="center")
+            for sira, (adi, stok, miktar) in enumerate(blok, start=1):
+                satir = 4 + sira
+                degerler = [adi, stok, goster(miktar), ""]
+                for i, deger in enumerate(degerler):
+                    h = ws.cell(satir, baslangic + i, deger)
+                    h.font = Font(name="Calibri", size=puntu, bold=(i == 2))
+                    h.border = kenarlik
+                    h.alignment = Alignment(
+                        horizontal="left" if i == 0 else "center",
+                        vertical="center",
+                    )
+                    if sira % 2 == 0:
+                        h.fill = zebra_dolgu
+                ws.row_dimensions[satir].height = satir_yuksekligi
+        ws.row_dimensions[4].height = 20
+
+        ws.column_dimensions["A"].width = 30
+        ws.column_dimensions["B"].width = 8
+        ws.column_dimensions["C"].width = 9
+        ws.column_dimensions["D"].width = 9
+        if iki_blok:
+            ws.column_dimensions["E"].width = 2
+            ws.column_dimensions["F"].width = 30
+            ws.column_dimensions["G"].width = 8
+            ws.column_dimensions["H"].width = 9
+            ws.column_dimensions["I"].width = 9
+
+        son_satir = 4 + max(len(b) for b in bloklar)
+        # Her şube tek A4 sayfaya sığar (gerekirse otomatik küçültülür).
+        ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 1
+        ws.page_margins.left = 0.3
+        ws.page_margins.right = 0.3
+        ws.page_margins.top = 0.4
+        ws.page_margins.bottom = 0.5
+        ws.print_options.horizontalCentered = True
+        ws.print_area = f"A1:{openpyxl.utils.get_column_letter(son_sutun)}{son_satir}"
+        ws.oddFooter.left.text = f"{sube} - {gorunen_tarih}"
+        ws.oddFooter.center.text = "RD = Reyon Dolu"
+        ws.oddFooter.right.text = "Yalçın Marketler Zinciri"
+
+    if sayfa_sayisi == 0:
+        ws = wb.create_sheet(title="Sevkiyat")
+        ws["A1"] = "Bu tarih için siparişi olan şube bulunamadı."
+
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
 def siparis_taslagini_oku(sube, tarih):
     """Şube+tarih bazlı kalıcı sipariş taslağını Supabase'den okur."""
     try:
@@ -2602,6 +2754,7 @@ else:
 
                         excel_duzenleme = generate_sube_siparis_excel(tarih_str, df_wide, "standart")
                         excel_dikey = generate_sube_siparis_dikey_2_sayfa(tarih_str, df_wide)
+                        excel_sevkiyat = generate_sube_bazli_sevkiyat_excel(tarih_str, df_wide)
 
                         rapor_col1, rapor_col2 = st.columns(2)
                         with rapor_col1:
@@ -2621,6 +2774,15 @@ else:
                                 type="primary",
                                 use_container_width=True
                             )
+
+                        st.download_button(
+                            label="🚚 Şube Şube Sevkiyat Çıktısı (Her Şube Ayrı Sayfa)",
+                            data=excel_sevkiyat,
+                            file_name=f"Sube_Sube_Sevkiyat_{tarih_str}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                        st.caption("Her şube ayrı bir sayfadır ve tek A4'e sığar; kalem sayısı fazlaysa liste yan yana ikiye bölünür. Sadece siparişi olan kalemler yazılır.")
 
                     else:
                         st.info("ℹ️ Aranan kriterlere uygun şube sipariş verisi bulunamadı.")
